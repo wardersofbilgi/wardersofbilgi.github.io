@@ -1,5 +1,5 @@
 // WOB: açılış, oturum ve sayfa yönlendirme.
-import { sb, state, isAdmin, loadProfile, h, icon, fail, closeLayers, router } from './core.js';
+import { sb, state, isAdmin, loadProfile, h, icon, fail, toast, closeLayers, router } from './core.js';
 import * as S from './screens.js';
 
 const app = document.getElementById('app');
@@ -16,9 +16,10 @@ function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const [a, b] = parts;
   // Oturum durumuna göre yönlendir
-  if (!state.session) return a === 'register' ? S.register : S.login;
+  if (!state.session) return a === 'register' ? S.register : a === 'reset' ? S.reset : S.login;
+  if (state.recovery) return S.newPassword;
   if (!state.profile || state.profile.status !== 'approved') return S.pending;
-  if (a === 'login' || a === 'register' || a === 'pending') {
+  if (a === 'login' || a === 'register' || a === 'pending' || a === 'reset') {
     history.replaceState(null, '', '#/');
     return S.events;
   }
@@ -88,7 +89,9 @@ async function boot() {
   const { data } = await sb.auth.getSession();
   state.session = data.session;
   await loadProfile();
+  if (state.linkError) history.replaceState(null, '', '#/login');
   await render();
+  if (state.linkError) toast('Bağlantı geçersiz ya da süresi dolmuş. Yeniden iste.', true);
 
   sb.auth.onAuthStateChange((event, session) => {
     const before = state.session?.user?.id ?? null;

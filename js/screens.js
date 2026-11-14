@@ -35,7 +35,8 @@ export function login() {
         h('div', { style: { fontWeight: '700', letterSpacing: '3px' } }, APP_NAME),
         h('div', { class: 'muted' }, 'Etkinlikler, rotalar ve sürüş düzeni')),
       form,
-      h('a', { href: '#/register', class: 'center', style: { marginTop: '8px' } }, 'Hesabın yok mu? Kayıt ol'),
+      h('a', { href: '#/reset', class: 'center', style: { marginTop: '8px' } }, 'Şifremi unuttum'),
+      h('a', { href: '#/register', class: 'center' }, 'Hesabın yok mu? Kayıt ol'),
       isStandalone() ? null : h('div', { class: 'hint', style: { marginTop: '16px' } },
         h('b', null, 'Uygulama gibi kullan'),
         h('div', { class: 'muted' }, 'iPhone: Safari’de Paylaş simgesine dokun, “Ana Ekrana Ekle”yi seç.'),
@@ -72,6 +73,48 @@ export function register() {
       h('div', { class: 'muted' }, 'Kaydın, kulüp yöneticisi onayladıktan sonra aktif olur.'),
       field('Ad soyad', name), field('Telefon', phone), field('Motosiklet', bike), field('E-posta', email), field('Şifre', pass),
       btn('Kayıt ol', submit, 'block'),
+    ],
+  };
+}
+
+// Şifre sıfırlama: e-postaya bağlantı gönder
+export function reset() {
+  const email = input({ type: 'email', autocomplete: 'email', inputmode: 'email', placeholder: 'ornek@mail.com', autocapitalize: 'none' });
+  return {
+    title: 'Şifremi unuttum',
+    back: '#/login',
+    node: [
+      h('div', { class: 'muted' }, 'Kayıtlı e-posta adresini yaz. Sana yeni şifre belirleyebileceğin bir bağlantı göndereceğiz.'),
+      field('E-posta', email),
+      btn('Bağlantı gönder', busy(async () => {
+        if (!email.value.includes('@')) return toast('Geçerli bir e-posta gir.', true);
+        const { error } = await sb.auth.resetPasswordForEmail(email.value.trim(), { redirectTo: location.origin + location.pathname });
+        if (error) return fail(/rate|limit|seconds/i.test(error.message) ? 'Çok sık denendi. Birkaç dakika sonra tekrar dene.' : error);
+        toast('Bağlantı gönderildi. E-postanı (gereksiz klasörü dahil) kontrol et.');
+      }), 'block'),
+    ],
+  };
+}
+
+// E-postadaki bağlantıyla gelindi: yeni şifre belirle
+export function newPassword() {
+  const p1 = input({ type: 'password', autocomplete: 'new-password', placeholder: 'En az 6 karakter' });
+  const p2 = input({ type: 'password', autocomplete: 'new-password' });
+  return {
+    title: 'Yeni şifre',
+    node: [
+      h('div', { class: 'muted' }, 'Hesabın için yeni bir şifre belirle.'),
+      field('Yeni şifre', p1), field('Yeni şifre (tekrar)', p2),
+      btn('Şifreyi kaydet', busy(async () => {
+        if (p1.value.length < 6) return toast('Şifre en az 6 karakter olmalı.', true);
+        if (p1.value !== p2.value) return toast('Şifreler aynı değil.', true);
+        const { error } = await sb.auth.updateUser({ password: p1.value });
+        if (error) return fail(error);
+        state.recovery = false;
+        toast('Şifren değişti.');
+        history.replaceState(null, '', '#/');
+        router.refresh();
+      }), 'block'),
     ],
   };
 }

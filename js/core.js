@@ -4,11 +4,16 @@
 const SUPABASE_URL = 'https://hgpncthohgxvazoizvho.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_KHfD-45B4nPBTxeU6Yr6DQ_PurFTKx3';
 
+// E-postadaki bağlantıyla gelindiyse (şifre sıfırlama, doğrulama) bilgiyi Supabase adresi temizlemeden önce al
+const linkParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+const linkRecovery = linkParams.get('type') === 'recovery';
+const linkError = linkParams.get('error_description');
+
 export const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
 
-export const state = { session: null, profile: null };
+export const state = { session: null, profile: null, recovery: linkRecovery, linkError };
 export const me = () => state.session?.user?.id ?? null;
 export const isAdmin = () => state.profile?.role === 'admin' && state.profile?.status === 'approved';
 
