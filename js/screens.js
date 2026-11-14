@@ -11,6 +11,16 @@ const check = ({ data, error }) => {
   return data;
 };
 
+const EDU = { student: 'Okuyor', graduate: 'Mezun' };
+function eduPicker(initial) {
+  let val = initial || null;
+  const el = h('div', { class: 'seg', role: 'group', 'aria-label': 'Öğrencilik durumu' });
+  const draw = () => el.replaceChildren(...[['student', 'Okuyorum'], ['graduate', 'Mezunum']].map(([k, label]) =>
+    h('button', { type: 'button', class: val === k ? 'on' : '', 'aria-pressed': String(val === k), onclick: () => { val = k; draw(); } }, label)));
+  draw();
+  return { el, get value() { return val; } };
+}
+
 // =====================================================================
 // Giriş, kayıt, onay bekleme
 // =====================================================================
@@ -51,14 +61,16 @@ export function register() {
   const bike = input({ placeholder: 'Marka / model' });
   const email = input({ type: 'email', autocomplete: 'email', autocapitalize: 'none' });
   const pass = input({ type: 'password', autocomplete: 'new-password', placeholder: 'En az 6 karakter' });
+  const edu = eduPicker();
   const submit = busy(async () => {
     if (name.value.trim().length < 3) return toast('Ad soyad gir.', true);
+    if (!edu.value) return toast('Okuyorum ya da mezunum seç.', true);
     if (!email.value.includes('@')) return toast('Geçerli bir e-posta gir.', true);
     if (pass.value.length < 6) return toast('Şifre en az 6 karakter olmalı.', true);
     const { data, error } = await sb.auth.signUp({
       email: email.value.trim(),
       password: pass.value,
-      options: { data: { full_name: name.value.trim(), phone: phone.value.trim(), bike: bike.value.trim() } },
+      options: { data: { full_name: name.value.trim(), phone: phone.value.trim(), bike: bike.value.trim(), edu_status: edu.value } },
     });
     if (error) return fail(error);
     if (!data.session) {
@@ -71,7 +83,9 @@ export function register() {
     back: '#/login',
     node: [
       h('div', { class: 'muted' }, 'Kaydın, kulüp yöneticisi onayladıktan sonra aktif olur.'),
-      field('Ad soyad', name), field('Telefon', phone), field('Motosiklet', bike), field('E-posta', email), field('Şifre', pass),
+      field('Ad soyad', name),
+      h('div', { class: 'field', style: { display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--muted)', fontSize: '13px', fontWeight: '600' } }, 'Bilgi Üniversitesi', edu.el),
+      field('Telefon', phone), field('Motosiklet', bike), field('E-posta', email), field('Şifre', pass),
       btn('Kayıt ol', submit, 'block'),
     ],
   };
@@ -353,6 +367,40 @@ export async function eventEdit(id) {
       draw();
     },
   });
+  // Yazarak yer arama (OpenStreetMap). Sonuca dokununca durak olarak eklenir.
+  const results = h('div', { class: 'results' });
+  const query = input({ type: 'search', enterkeyhint: 'search', placeholder: 'Yer ara: örn. Sapanca Gölü', 'aria-label': 'Yer ara' });
+  const searchBtn = btn('Ara', busy(async () => {
+    const text = query.value.trim();
+    if (text.length < 3) return toast('Aramak için en az 3 harf yaz.', true);
+    results.replaceChildren(h('div', { class: 'muted' }, 'Aranıyor…'));
+    let found;
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=tr&q=${encodeURIComponent(text)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      found = await res.json();
+    } catch {
+      results.replaceChildren();
+      return toast('Arama yapılamadı. Biraz sonra tekrar dene.', true);
+    }
+    results.replaceChildren(...(found.length ? found.map((r) => {
+      const name = r.name || r.display_name.split(',')[0];
+      return h('button', { type: 'button', class: 'pick', onclick: () => {
+        stops.push({ name, lat: Number(r.lat), lng: Number(r.lon) });
+        draw();
+        map.focus(Number(r.lat), Number(r.lon));
+        results.replaceChildren();
+        query.value = '';
+      } }, h('b', null, name), h('span', { class: 'muted small' }, r.display_name));
+    }) : [h('div', { class: 'muted' }, 'Sonuç bulunamadı. Farklı bir yazımla dene ya da haritaya dokun.')]));
+  }), 'sec');
+  query.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchBtn.click();
+    }
+  });
+
   function draw() {
     map.setStops(stops);
     list.replaceChildren(...stops.map((s, i) => h('div', { class: 'card', style: { flexDirection: 'row', alignItems: 'center', padding: '8px', gap: '4px' } },
@@ -395,7 +443,9 @@ export async function eventEdit(id) {
       section('Tarih ve saat'),
       h('div', { class: 'dt' }, date, time),
       section('Rota'),
-      h('div', { class: 'muted' }, 'Haritaya dokunarak sırayla durak ekle. İlk durak buluşma noktası, son durak varış noktası olur.'),
+      h('div', { class: 'muted' }, 'Yer adını yazıp ara ya da haritaya dokunarak sırayla durak ekle. İlk durak buluşma noktası, son durak varış noktası olur.'),
+      h('div', { class: 'row' }, h('div', { class: 'grow' }, query), searchBtn),
+      results,
       map.el, list,
       h('div', { style: { height: '4px' } }),
       ev?.published
@@ -492,34 +542,52 @@ export async function formation(id) {
 // Öneriler
 // =====================================================================
 export async function suggestions() {
-  const items = await sb.from('suggestions').select('*, profiles(full_name)').order('created_at', { ascending: false }).then(check);
+  const [items, votes] = await Promise.all([
+    sb.from('suggestions').select('*, profiles(full_name)').order('created_at', { ascending: false }).then(check),
+    sb.from('suggestion_votes').select('*').then(check),
+  ]);
+  const uid = me();
   const title = input({ placeholder: 'Örn: Kapadokya 2 günlük tur', 'aria-label': 'Öneri başlığı' });
   const body = textarea({ placeholder: 'Rota, tarih, detay fikirlerin...', 'aria-label': 'Öneri detayı' });
+  const vote = (s, value, mine) => busy(async () => {
+    if (mine === value) check(await sb.from('suggestion_votes').delete().eq('suggestion_id', s.id).eq('user_id', uid));
+    else check(await sb.from('suggestion_votes').upsert({ suggestion_id: s.id, user_id: uid, value }));
+    router.refresh();
+  });
   return {
     title: 'Öneriler',
     tab: 'suggestions',
     node: [
       section('Etkinlik öner'),
-      h('div', { class: 'muted' }, 'Önerileri yalnızca kulüp yöneticileri görür.'),
+      h('div', { class: 'muted' }, 'Önerileri tüm üyeler görür ve oylayabilir.'),
       title, body,
       btn('Öneriyi gönder', busy(async () => {
         if (title.value.trim().length < 3) return toast('Önerine kısa bir başlık yaz.', true);
         check(await sb.from('suggestions').insert({ title: title.value.trim(), body: body.value.trim() || null }));
-        toast('Teşekkürler! Önerin yöneticilere iletildi.');
+        toast('Teşekkürler! Önerin eklendi.');
         router.refresh();
       }), 'block'),
-      section(isAdmin() ? `Gelen öneriler (${items.length})` : 'Önerilerim'),
+      section(`Öneriler (${items.length})`),
       items.length ? null : h('div', { class: 'empty' }, 'Henüz öneri yok.'),
-      items.map((s) => h('div', { class: 'card' },
-        h('b', null, s.title),
-        s.body ? h('div', { class: 'pre' }, s.body) : null,
-        h('div', { class: 'row' },
-          h('div', { class: 'muted small grow' }, (isAdmin() && s.profiles?.full_name ? `${s.profiles.full_name} · ` : '') + fmtDate(s.created_at)),
-          btn('Sil', busy(async () => {
-            if (!(await confirmBox('Öneriyi sil', `“${s.title}” silinsin mi?`, { yes: 'Sil', danger: true }))) return;
-            check(await sb.from('suggestions').delete().eq('id', s.id));
-            router.refresh();
-          }), 'ghost sm')))),
+      items.map((s) => {
+        const vs = votes.filter((v) => v.suggestion_id === s.id);
+        const mine = vs.find((v) => v.user_id === uid)?.value;
+        const up = vs.filter((v) => v.value === 1).length;
+        const down = vs.filter((v) => v.value === -1).length;
+        return h('div', { class: 'card' },
+          h('b', null, s.title),
+          s.body ? h('div', { class: 'pre' }, s.body) : null,
+          h('div', { class: 'muted small' }, (s.profiles?.full_name ? `${s.profiles.full_name} · ` : '') + fmtDate(s.created_at)),
+          h('div', { class: 'row' },
+            h('div', { class: 'votes grow' },
+              h('button', { class: 'react up' + (mine === 1 ? ' on' : ''), 'aria-label': 'Beğendim', onclick: vote(s, 1, mine) }, icon('like'), up),
+              h('button', { class: 'react down' + (mine === -1 ? ' on' : ''), 'aria-label': 'Beğenmedim', onclick: vote(s, -1, mine) }, icon('dislike'), down)),
+            isAdmin() || s.user_id === uid ? btn('Sil', busy(async () => {
+              if (!(await confirmBox('Öneriyi sil', `“${s.title}” silinsin mi?`, { yes: 'Sil', danger: true }))) return;
+              check(await sb.from('suggestions').delete().eq('id', s.id));
+              router.refresh();
+            }), 'ghost sm') : null));
+      }),
     ],
   };
 }
@@ -571,7 +639,7 @@ export async function members() {
   });
   const info = (m) => [
     h('b', { style: { fontSize: '16px' } }, m.full_name || '(isimsiz)'),
-    h('div', { class: 'muted' }, [m.bike, m.phone].filter(Boolean).join(' · ') || 'Bilgi yok'),
+    h('div', { class: 'muted' }, [EDU[m.edu_status], m.bike, m.phone].filter(Boolean).join(' · ') || 'Bilgi yok'),
     h('div', { class: 'muted small' }, `Kayıt: ${fmtDate(m.created_at)}`),
   ];
   const waiting = all.filter((m) => m.status === 'pending');
@@ -623,6 +691,7 @@ export function profile() {
   const name = input({ value: p?.full_name ?? '', autocomplete: 'name' });
   const phone = input({ value: p?.phone ?? '', type: 'tel', autocomplete: 'tel' });
   const bike = input({ value: p?.bike ?? '' });
+  const edu = eduPicker(p?.edu_status);
   return {
     title: 'Profil',
     tab: 'profile',
@@ -630,10 +699,10 @@ export function profile() {
       h('div', null, badge(isAdmin() ? 'Yönetici' : 'Üye', isAdmin() ? 'gold' : '')),
       h('div', { class: 'muted' }, state.session?.user?.email ?? ''),
       section('Bilgilerim'),
-      field('Ad soyad', name), field('Telefon', phone), field('Motosiklet', bike),
+      field('Ad soyad', name), edu.el, field('Telefon', phone), field('Motosiklet', bike),
       btn('Kaydet', busy(async () => {
         if (name.value.trim().length < 3) return toast('Ad soyad gir.', true);
-        check(await sb.from('profiles').update({ full_name: name.value.trim(), phone: phone.value.trim() || null, bike: bike.value.trim() || null }).eq('id', p.id));
+        check(await sb.from('profiles').update({ full_name: name.value.trim(), phone: phone.value.trim() || null, bike: bike.value.trim() || null, edu_status: edu.value }).eq('id', p.id));
         await loadProfile();
         toast('Kaydedildi.');
       }), 'block'),

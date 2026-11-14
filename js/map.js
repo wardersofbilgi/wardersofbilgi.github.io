@@ -65,6 +65,9 @@ export function routeMap(stops, { onPick, tall = false } = {}) {
 
   return {
     el,
+    focus(lat, lng) {
+      map?.setView([lat, lng], 13);
+    },
     setStops(next) {
       current = next;
       draw();
