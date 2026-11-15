@@ -11,6 +11,12 @@ const check = ({ data, error }) => {
   return data;
 };
 
+// Arama: Türkçe harflere duyarlı, büyük/küçük harf ayırmaz
+const norm = (t) => String(t ?? '').toLocaleLowerCase('tr');
+const matches = (q, ...fields) => !q.trim() || fields.some((x) => norm(x).includes(norm(q.trim())));
+const searchBox = (value, placeholder, oninput) =>
+  input({ type: 'search', value, placeholder, 'aria-label': placeholder, enterkeyhint: 'search', oninput: (e) => oninput(e.target.value) });
+
 const EDU = { student: 'Okuyor', graduate: 'Mezun' };
 function eduPicker(initial) {
   let val = initial || null;
@@ -159,6 +165,7 @@ export function pending() {
 // Etkinlikler
 // =====================================================================
 let evTab = 'active';
+let evQuery = '';
 const endOfDay = (iso) => {
   const d = new Date(iso);
   d.setHours(23, 59, 59, 999);
@@ -203,13 +210,14 @@ export async function events() {
 
   // Sekme değişince yalnızca bu bölüm yeniden çizilir (sayfa titremesin)
   const body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
+  const search = searchBox(evQuery, 'Etkinlik ara', (v) => { evQuery = v; draw(); });
   function draw() {
-    const list = evTab === 'active' ? active : past;
+    const list = (evTab === 'active' ? active : past).filter((e) => matches(evQuery, e.title, e.description, e.meeting_note));
     const seg = (key, label) => h('button', { class: evTab === key ? 'on' : '', onclick: () => { if (evTab !== key) { evTab = key; draw(); } } }, label);
     body.replaceChildren(...[
       h('div', { class: 'seg' }, seg('active', `Aktif (${active.length})`), seg('past', `Geçmiş (${past.length})`)),
       isAdmin() && evTab === 'active' ? btn('+ Yeni etkinlik', () => router.go('#/edit'), 'block') : null,
-      ...(list.length ? list.map((e) => card(e, evTab)) : [h('div', { class: 'empty' }, evTab === 'active' ? 'Aktif etkinlik yok.' : 'Henüz tamamlanan etkinlik yok.')]),
+      ...(list.length ? list.map((e) => card(e, evTab)) : [h('div', { class: 'empty' }, evQuery.trim() ? 'Aramayla eşleşen etkinlik yok.' : evTab === 'active' ? 'Aktif etkinlik yok.' : 'Henüz tamamlanan etkinlik yok.')]),
     ].filter(Boolean));
   }
   draw();
@@ -220,6 +228,7 @@ export async function events() {
     node: [
       h('div', { class: 'brand' }, logo(110), h('div', { class: 'name' }, APP_NAME),
         state.profile?.full_name ? h('div', { class: 'muted' }, `Hoş geldin, ${state.profile.full_name.split(' ')[0]}`) : null),
+      evs.length > 1 || evQuery ? search : null,
       body,
     ],
   };
@@ -683,6 +692,7 @@ export async function dashboard() {
 // =====================================================================
 // Üyeler (yönetici)
 // =====================================================================
+let memQuery = '';
 export async function members() {
   if (!isAdmin()) return adminOnly('Üyeler', 'members');
   const all = await sb.from('profiles').select('*').order('full_name').then(check);
@@ -696,19 +706,22 @@ export async function members() {
     h('div', { class: 'muted' }, [m.bike, m.phone].filter(Boolean).join(' · ') || 'Bilgi yok'),
     h('div', { class: 'muted small' }, `Kayıt: ${fmtDate(m.created_at)}`),
   ];
-  const waiting = all.filter((m) => m.status === 'pending');
-  const approved = all.filter((m) => m.status === 'approved');
-  const rejected = all.filter((m) => m.status === 'rejected');
-  return {
-    title: 'Üyeler',
-    tab: 'members',
-    node: [
+  const body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
+  const search = searchBox(memQuery, 'Üye ara: ad, motor, telefon', (v) => { memQuery = v; draw(); });
+  const flat = (arr) => arr.flat(Infinity).filter((x) => x != null && x !== false);
+  function draw() {
+    const shown = all.filter((m) => matches(memQuery, m.full_name, m.bike, m.phone, EDU[m.edu_status]));
+    const waiting = shown.filter((m) => m.status === 'pending');
+    const approved = shown.filter((m) => m.status === 'approved');
+    const rejected = shown.filter((m) => m.status === 'rejected');
+    body.replaceChildren(...flat([
+      memQuery.trim() && !shown.length ? h('div', { class: 'empty' }, 'Aramayla eşleşen üye yok.') : null,
       section(`Onay bekleyenler (${waiting.length})`),
       waiting.length ? null : h('div', { class: 'muted' }, 'Bekleyen başvuru yok.'),
       waiting.map((m) => h('div', { class: 'card' }, info(m),
         h('div', { class: 'row' }, btn('Onayla', patch(m.id, { status: 'approved' }), 'ok sm grow'), btn('Reddet', patch(m.id, { status: 'rejected' }), 'bad sm grow')))),
       section(`Üyeler (${approved.length})`),
-      h('div', { class: 'muted' }, `Yöneticiler: ${approved.filter((m) => m.role === 'admin').length}. Kendi yetkini buradan değiştiremezsin.`),
+      h('div', { class: 'muted' }, `Yöneticiler: ${all.filter((m) => m.status === 'approved' && m.role === 'admin').length}. Kendi yetkini buradan değiştiremezsin.`),
       approved.map((m) => {
         const admin = m.role === 'admin';
         return h('div', { class: 'card' },
@@ -733,8 +746,10 @@ export async function members() {
         section(`Reddedilenler (${rejected.length})`),
         rejected.map((m) => h('div', { class: 'card' }, info(m), btn('Yeniden onayla', patch(m.id, { status: 'approved' }), 'sec sm'))),
       ] : null,
-    ],
-  };
+    ]));
+  }
+  draw();
+  return { title: 'Üyeler', tab: 'members', node: [search, body] };
 }
 
 // =====================================================================
