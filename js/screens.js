@@ -636,20 +636,21 @@ export async function suggestions() {
 // =====================================================================
 const adminOnly = (title, tab) => ({ title, tab, node: h('div', { class: 'empty' }, 'Bu ekran sadece yöneticiler içindir.') });
 
+let dashTab = 'members';
 export async function dashboard() {
   if (!isAdmin()) return adminOnly('Dashboard', 'dashboard');
   const d = await sb.rpc('admin_dashboard').then(check);
   const max = Math.max(1, ...d.members.map((m) => m.attended));
   const tile = (value, label, cls = '') => h('div', { class: 'tile ' + cls }, h('b', null, value), h('span', null, label));
   const dot = (v) => h('i', { class: 'dot', style: { background: `var(${v})` } });
-  return {
-    title: 'Dashboard',
-    tab: 'dashboard',
-    node: [
-      h('div', { class: 'tiles' },
-        tile(d.past_events, 'Yapılan etkinlik', 'gold'), tile(d.upcoming_events, 'Aktif'), tile(d.approved_members, 'Onaylı üye'),
-        tile(d.pending_members, 'Onay bekleyen', d.pending_members > 0 ? 'warn' : ''), tile(d.open_suggestions, 'Öneri'), tile(d.total_events, 'Toplam yayın')),
-      section('Üye katılım sıralaması'),
+  // Sekme değişince yalnızca bu bölüm yeniden çizilir
+  const body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
+  function draw() {
+    const seg = (key, label) => h('button', { class: dashTab === key ? 'on' : '', onclick: () => { if (dashTab !== key) { dashTab = key; draw(); } } }, label);
+    const flat = (arr) => arr.flat(Infinity).filter((x) => x != null && x !== false);
+    body.replaceChildren(...flat([
+      h('div', { class: 'seg' }, seg('members', 'Üye katılımları'), seg('events', `Etkinlikler (${d.events.length})`)),
+      dashTab === 'members' ? [
       h('div', { class: 'muted' }, 'Sıralama yoklamaya göredir: sayı, yoklamada “geldi” işaretlendiği etkinlik sayısıdır.'),
       h('div', { class: 'card' },
         d.members.length ? null : h('div', { class: 'muted' }, 'Veri yok.'),
@@ -657,11 +658,24 @@ export async function dashboard() {
           h('span', { class: 'n' }, i + 1), h('span', { style: { fontWeight: '600' } }, m.full_name, EDU[m.edu_status] ? h('span', { class: 'muted small' }, `  ${EDU[m.edu_status]}`) : null), h('span', { class: 'v' }, m.attended),
           h('div', { class: 'track' }, h('i', { style: { width: `${(m.attended / max) * 100}%` } })),
           h('div', { class: 'sub' }, dot('--ok'), `${m.yes_count} katılıyorum  `, dot('--bad'), `${m.no_count} katılamıyorum  `, dot('--muted'), `${Math.max(0, d.total_events - m.yes_count - m.no_count)} yanıtsız`)))),
-      section('Etkinlikler'),
+      ] : [
       d.events.length ? null : h('div', { class: 'empty' }, 'Henüz yayınlanmış etkinlik yok.'),
       d.events.map((e) => h('button', { class: 'card', style: { textAlign: 'left', width: '100%', color: 'inherit' }, onclick: () => router.go(`#/event/${e.id}`) },
         h('b', null, e.title), h('div', { class: 'muted' }, fmtDate(e.starts_at)),
         h('div', { class: 'muted' }, `${e.completed_at ? 'Tamamlandı' : 'Aktif'} · ✅ ${e.going} katılıyorum · 🏁 ${e.present ?? 0} geldi · ❌ ${e.not_going} · 👍 ${e.likes} · 👎 ${e.dislikes}`))),
+      ],
+    ]));
+  }
+  draw();
+
+  return {
+    title: 'Dashboard',
+    tab: 'dashboard',
+    node: [
+      h('div', { class: 'tiles' },
+        tile(d.past_events, 'Yapılan etkinlik', 'gold'), tile(d.upcoming_events, 'Aktif'), tile(d.approved_members, 'Onaylı üye'),
+        tile(d.pending_members, 'Onay bekleyen', d.pending_members > 0 ? 'warn' : ''), tile(d.open_suggestions, 'Öneri'), tile(d.total_events, 'Toplam etkinlik')),
+      body,
     ],
   };
 }
