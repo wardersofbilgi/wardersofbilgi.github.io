@@ -1,6 +1,6 @@
 // WOB service worker: uygulama dosyalarını önbelleğe alır.
 // Çevrimiçiyken her zaman en yeni sürüm gelir; bağlantı yoksa önbellekteki açılır.
-const CACHE = 'wob-v2';
+const CACHE = 'wob-v3';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/supabase.js', 'js/app.js', 'js/core.js', 'js/screens.js', 'js/map.js',
   'manifest.json', 'icons/logo.png', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
