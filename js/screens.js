@@ -165,7 +165,6 @@ export function pending() {
 // Etkinlikler
 // =====================================================================
 let evTab = 'active';
-let evQuery = '';
 const endOfDay = (iso) => {
   const d = new Date(iso);
   d.setHours(23, 59, 59, 999);
@@ -210,14 +209,13 @@ export async function events() {
 
   // Sekme değişince yalnızca bu bölüm yeniden çizilir (sayfa titremesin)
   const body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
-  const search = searchBox(evQuery, 'Etkinlik ara', (v) => { evQuery = v; draw(); });
   function draw() {
-    const list = (evTab === 'active' ? active : past).filter((e) => matches(evQuery, e.title, e.description, e.meeting_note));
+    const list = evTab === 'active' ? active : past;
     const seg = (key, label) => h('button', { class: evTab === key ? 'on' : '', onclick: () => { if (evTab !== key) { evTab = key; draw(); } } }, label);
     body.replaceChildren(...[
       h('div', { class: 'seg' }, seg('active', `Aktif (${active.length})`), seg('past', `Geçmiş (${past.length})`)),
       isAdmin() && evTab === 'active' ? btn('+ Yeni etkinlik', () => router.go('#/edit'), 'block') : null,
-      ...(list.length ? list.map((e) => card(e, evTab)) : [h('div', { class: 'empty' }, evQuery.trim() ? 'Aramayla eşleşen etkinlik yok.' : evTab === 'active' ? 'Aktif etkinlik yok.' : 'Henüz tamamlanan etkinlik yok.')]),
+      ...(list.length ? list.map((e) => card(e, evTab)) : [h('div', { class: 'empty' }, evTab === 'active' ? 'Aktif etkinlik yok.' : 'Henüz tamamlanan etkinlik yok.')]),
     ].filter(Boolean));
   }
   draw();
@@ -228,7 +226,6 @@ export async function events() {
     node: [
       h('div', { class: 'brand' }, logo(110), h('div', { class: 'name' }, APP_NAME),
         state.profile?.full_name ? h('div', { class: 'muted' }, `Hoş geldin, ${state.profile.full_name.split(' ')[0]}`) : null),
-      evs.length > 1 || evQuery ? search : null,
       body,
     ],
   };
@@ -646,6 +643,7 @@ export async function suggestions() {
 const adminOnly = (title, tab) => ({ title, tab, node: h('div', { class: 'empty' }, 'Bu ekran sadece yöneticiler içindir.') });
 
 let dashTab = 'members';
+let dashQuery = '';
 export async function dashboard() {
   if (!isAdmin()) return adminOnly('Dashboard', 'dashboard');
   const d = await sb.rpc('admin_dashboard').then(check);
@@ -654,22 +652,29 @@ export async function dashboard() {
   const dot = (v) => h('i', { class: 'dot', style: { background: `var(${v})` } });
   // Sekme değişince yalnızca bu bölüm yeniden çizilir
   const body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
+  const search = searchBox(dashQuery, '', (v) => { dashQuery = v; draw(); });
   function draw() {
     const seg = (key, label) => h('button', { class: dashTab === key ? 'on' : '', onclick: () => { if (dashTab !== key) { dashTab = key; draw(); } } }, label);
+    const label = dashTab === 'members' ? 'Üye ara' : 'Etkinlik ara';
+    search.placeholder = label;
+    search.setAttribute('aria-label', label);
+    const mem = d.members.map((m, i) => ({ m, i })).filter(({ m }) => matches(dashQuery, m.full_name, EDU[m.edu_status]));
+    const evs = d.events.filter((e) => matches(dashQuery, e.title));
+    const none = h('div', { class: 'empty' }, 'Aramayla eşleşen kayıt yok.');
     const flat = (arr) => arr.flat(Infinity).filter((x) => x != null && x !== false);
     body.replaceChildren(...flat([
       h('div', { class: 'seg' }, seg('members', 'Üye katılımları'), seg('events', `Etkinlikler (${d.events.length})`)),
       dashTab === 'members' ? [
       h('div', { class: 'muted' }, 'Sıralama yoklamaya göredir: sayı, yoklamada “geldi” işaretlendiği etkinlik sayısıdır.'),
       h('div', { class: 'card' },
-        d.members.length ? null : h('div', { class: 'muted' }, 'Veri yok.'),
-        d.members.map((m, i) => h('div', { class: 'rank' },
+        d.members.length ? (mem.length ? null : none) : h('div', { class: 'muted' }, 'Veri yok.'),
+        mem.map(({ m, i }) => h('div', { class: 'rank' },
           h('span', { class: 'n' }, i + 1), h('span', { style: { fontWeight: '600' } }, m.full_name, EDU[m.edu_status] ? h('span', { class: 'muted small' }, `  ${EDU[m.edu_status]}`) : null), h('span', { class: 'v' }, m.attended),
           h('div', { class: 'track' }, h('i', { style: { width: `${(m.attended / max) * 100}%` } })),
           h('div', { class: 'sub' }, dot('--ok'), `${m.yes_count} katılıyorum  `, dot('--bad'), `${m.no_count} katılamıyorum  `, dot('--muted'), `${Math.max(0, d.total_events - m.yes_count - m.no_count)} yanıtsız`)))),
       ] : [
-      d.events.length ? null : h('div', { class: 'empty' }, 'Henüz yayınlanmış etkinlik yok.'),
-      d.events.map((e) => h('button', { class: 'card', style: { textAlign: 'left', width: '100%', color: 'inherit' }, onclick: () => router.go(`#/event/${e.id}`) },
+      d.events.length ? (evs.length ? null : none) : h('div', { class: 'empty' }, 'Henüz yayınlanmış etkinlik yok.'),
+      evs.map((e) => h('button', { class: 'card', style: { textAlign: 'left', width: '100%', color: 'inherit' }, onclick: () => router.go(`#/event/${e.id}`) },
         h('b', null, e.title), h('div', { class: 'muted' }, fmtDate(e.starts_at)),
         h('div', { class: 'muted' }, `${e.completed_at ? 'Tamamlandı' : 'Aktif'} · ✅ ${e.going} katılıyorum · 🏁 ${e.present ?? 0} geldi · ❌ ${e.not_going} · 👍 ${e.likes} · 👎 ${e.dislikes}`))),
       ],
@@ -684,6 +689,7 @@ export async function dashboard() {
       h('div', { class: 'tiles' },
         tile(d.past_events, 'Yapılan etkinlik', 'gold'), tile(d.upcoming_events, 'Aktif'), tile(d.approved_members, 'Onaylı üye'),
         tile(d.pending_members, 'Onay bekleyen', d.pending_members > 0 ? 'warn' : ''), tile(d.open_suggestions, 'Öneri'), tile(d.total_events, 'Toplam etkinlik')),
+      search,
       body,
     ],
   };
