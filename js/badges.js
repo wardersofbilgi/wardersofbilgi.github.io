@@ -13,9 +13,13 @@ const day = (iso) => dayFmt.format(new Date(iso));
 
 // ---------- Veri ----------
 export async function loadBoard() {
-  const { data, error } = await sb.rpc('leaderboard');
+  const [{ data, error }, aw] = await Promise.all([
+    sb.rpc('leaderboard'),
+    sb.from('awards').select('id, user_id, title, icon, created_at').order('created_at'),
+  ]);
   if (error) throw error;
-  const members = data.members;
+  const awards = aw.error ? [] : aw.data; // tablo henüz yoksa rozetsiz devam et
+  const members = data.members.map((m) => ({ ...m, awards: awards.filter((a) => a.user_id === m.id) }));
   const seasons = data.seasons.map((s) => {
     const ideas = data.top_suggestions.filter((x) => x.season_id === s.id);
     // Etkinlikler ve Çarşamba Buluşmaları ayrı sayılır.
@@ -35,7 +39,7 @@ export async function loadBoard() {
       .sort((a, b) => b.attended - a.attended || a.full_name.localeCompare(b.full_name, 'tr'));
     return { ...s, open: !s.ends_at, rows, byId: new Map(rows.map((r) => [r.id, r])) };
   });
-  return { seasons, current: seasons.find((s) => s.open) ?? null, members: new Map(members.map((m) => [m.id, m])) };
+  return { seasons, current: seasons.find((s) => s.open) ?? null, members: new Map(members.map((m) => [m.id, m])), awards };
 }
 // Rozet verisi yüklenemese de ekranlar çalışsın
 export const loadBoardSafe = () => loadBoard().catch(() => null);
@@ -45,6 +49,12 @@ const SVG = {
   medal: '<path d="M8.5 2.500l3.5 6 3.5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="15" r="6.5" fill="currentColor"/>',
   flame: '<path d="M12 2.500c.8 3.7 5 5.2 5 10.500a5 5 0 0 1-10 0c0-2 .9-3.3 2-4.3 0 2 .8 3.3 2 3.3.3-3.2-.8-5.5 1-9.500z" fill="currentColor"/>',
   shield: '<path d="M12 3l7.500 2.500v5.500c0 4.600-3 8.300-7.500 10-4.500-1.700-7.500-5.400-7.500-10V5.500z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  star: '<path d="M12 3l2.700 5.600 6.100.800-4.500 4.300 1.100 6.100L12 16.900l-5.400 2.900 1.100-6.100-4.500-4.300 6.100-.800z" fill="currentColor"/>',
+  crown: '<path d="M3 8l4.500 4L12 5l4.500 7L21 8l-1.800 10H4.800z" fill="currentColor"/>',
+  road: '<path d="M8 3L4 21M16 3l4 18M12 4v3M12 10.500v3M12 17v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  helmet: '<path d="M4 15a8 8 0 0 1 16 0v2H11l-2-4H4.300M4 15v2h3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  heart: '<path d="M12 20s-7-4.400-7-9.800A4.200 4.200 0 0 1 12 7.500a4.200 4.200 0 0 1 7 2.700C19 15.600 12 20 12 20z" fill="currentColor"/>',
+  wrench: '<path d="M14.500 6.500a4 4 0 0 0 5 5L11 20a2.100 2.100 0 0 1-3-3l8.500-8.500a4 4 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
   bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.500c.7.7 1 1.5 1 2.500h6c0-1 .3-1.8 1-2.500A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 function svg(name) {
@@ -85,11 +95,36 @@ const streakBadge = (m, kind) => !m ? [] : [
 const chip = (b, mini) =>
   h('span', { class: `bdg ${b.cls}` + (mini ? ' mini' : ''), title: b.title, role: 'img', 'aria-label': b.title }, b.icon ? svg(b.icon) : null, mini && b.icon && !b.keep && !b.key.endsWith('streak') ? null : b.text);
 
-// İsimlerin yanında gösterilen küçük rozetler (açık sezon + seri)
+// Yöneticinin elle verdiği özel rozetler (kalıcı)
+export const AWARD_ICONS = ['star', 'crown', 'road', 'helmet', 'heart', 'wrench'];
+const awardBadges = (m) => (m?.awards ?? []).map((a) => ({ key: `award:${a.id}`, cls: 'award', icon: AWARD_ICONS.includes(a.icon) ? a.icon : 'star', text: a.title, title: `Özel rozet: ${a.title}` }));
+export const awardChip = (a, mini) => chip({ key: 'award', cls: 'award', icon: AWARD_ICONS.includes(a.icon) ? a.icon : 'star', text: a.title, title: a.title ? `Özel rozet: ${a.title}` : 'Özel rozet' }, mini);
+
+// İsimlerin yanında en değerli iki rozet gösterilir; gerisi "+N" olarak özetlenir (tamamı profilde)
+const WEIGHT = ['rank:', 'wrank:', 'tier:', 'wtier:', 'award:', 'idea', 'streak', 'wstreak'];
+const weight = (b) => { const i = WEIGHT.findIndex((w) => b.key.startsWith(w)); return i < 0 ? 99 : i; };
+const NAME_MAX = 2;
 export function nameBadges(board, uid) {
   if (!board) return null;
-  const list = [...seasonBadges(board.current?.byId.get(uid)), ...streakBadge(board.members.get(uid))];
-  return list.length ? h('span', { class: 'bdgs' }, list.map((b) => chip(b, true))) : null;
+  const m = board.members.get(uid);
+  const list = [...seasonBadges(board.current?.byId.get(uid)), ...awardBadges(m), ...streakBadge(m)].sort((a, b) => weight(a) - weight(b));
+  if (!list.length) return null;
+  const rest = list.slice(NAME_MAX);
+  return h('span', { class: 'bdgs' }, list.slice(0, NAME_MAX).map((b) => chip(b, true)),
+    rest.length ? h('span', { class: 'bdg more mini', title: rest.map((b) => b.title).join(' · '), role: 'img', 'aria-label': `ve ${rest.length} rozet daha` }, `+${rest.length}`) : null);
+}
+
+// Sezon özeti kartı için veriler
+export function seasonSummary(board, season, uid) {
+  const r = season?.byId.get(uid);
+  const m = board.members.get(uid);
+  return {
+    season: season?.name ?? '', name: m?.full_name ?? '',
+    events: r?.attended ?? 0, rank: r?.rank ?? null, tier: r?.tier?.name ?? null,
+    wed: r?.wed.attended ?? 0, wedRank: r?.wed.rank ?? null, wedTier: r?.wed.tier?.name ?? null,
+    streak: m?.streak ?? 0, wedStreak: m?.wed_streak ?? 0,
+    idea: r?.idea?.title ?? null, awards: (m?.awards ?? []).map((a) => a.title),
+  };
 }
 
 // Yeni kazanılan rozeti bir kez duyur (bu telefonda)
@@ -222,6 +257,12 @@ export function myBadges(board) {
     out.push(card(`${cur.name} · Çarşamba Buluşmaları`, row.wed, seasonBadges(row, 'wednesday'), 'buluşma', 'Çarşamba Buluşmasına'));
   } else {
     out.push(h('div', { class: 'card muted' }, 'Şu an açık bir sezon yok. Sezon başlayınca rozetlerin burada görünecek.'));
+  }
+  if (m?.awards?.length) {
+    out.push(h('div', { class: 'card' },
+      h('b', null, 'Özel rozetler'),
+      h('div', { class: 'bdgs' }, m.awards.map((a) => awardChip(a))),
+      h('div', { class: 'muted small' }, 'Yöneticilerin verdiği rozetlerdir; kalıcıdır.')));
   }
   if (m) {
     out.push(h('div', { class: 'card' },

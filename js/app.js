@@ -2,6 +2,7 @@
 import { sb, state, isAdmin, loadProfile, h, icon, fail, toast, closeLayers, router } from './core.js';
 import * as S from './screens.js';
 import { syncPush } from './push.js';
+import { announcements, adminLog } from './extras.js';
 
 const app = document.getElementById('app');
 
@@ -34,6 +35,8 @@ function route() {
   if (a === 'ranking') return S.rankingPage;
   if (a === 'members') return S.members;
   if (a === 'profile') return S.profile;
+  if (a === 'announcements') return announcements;
+  if (a === 'log') return adminLog;
   return S.events;
 }
 
@@ -84,7 +87,7 @@ window.addEventListener('hashchange', render);
 // Uygulamaya geri dönüldüğünde verileri tazele (form içeren ekranlar hariç)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !state.session) return;
-  if (/^#\/(edit|formation|profile|suggestions)/.test(location.hash) || document.getElementById('layer').children.length) return;
+  if (/^#\/(edit|formation|profile|suggestions|announcements)/.test(location.hash) || document.getElementById('layer').children.length) return;
   render();
 });
 

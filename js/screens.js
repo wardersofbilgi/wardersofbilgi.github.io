@@ -6,6 +6,7 @@ import {
 import { routeMap, mapsUrl } from './map.js';
 import { loadBoard, loadBoardSafe, nameBadges, announceNew, ranking as rankingView, myBadges } from './badges.js';
 import { pushSupported, pushStatus, enablePush, disablePush } from './push.js';
+import { addAttendeeSheet, calendarLink, announcementsBlock, awardSheet, summarySheet } from './extras.js';
 
 const APP_NAME = 'WARDERS OF BİLGİ';
 const check = ({ data, error }) => {
@@ -249,6 +250,7 @@ export async function events() {
       h('div', { class: 'brand' }, logo(110), h('div', { class: 'name' }, APP_NAME),
         state.profile?.full_name ? h('div', { class: 'muted' }, `Hoş geldin, ${state.profile.full_name.split(' ')[0]}`) : null),
       seasonHint,
+      announcementsBlock(),
       body,
     ],
   };
@@ -340,6 +342,7 @@ export async function eventDetail(id) {
           h('b', { style: { color: `var(${i === 0 ? '--ok' : i === n - 1 ? '--bad' : '--gold'})` } }, i + 1), h('span', null, s.name)))),
         h('a', { class: 'btn sec block', href: mapsUrl(stops), target: '_blank', rel: 'noopener' }, 'Google Maps’te yol tarifi al'),
       ],
+      done ? null : calendarLink(ev, stops),
 
       h('div', { class: 'row' },
         h('button', { class: 'react up' + (myReact === 1 ? ' on' : ''), 'aria-label': 'Beğen', onclick: react(1) }, icon('like'), likes),
@@ -366,6 +369,7 @@ export async function eventDetail(id) {
         !rollcall ? h('div', { class: 'muted small' }, 'Bu etkinlikte yoklama alınmaz. “Katılıyorum” diyenler, etkinlik tamamlanınca katılmış sayılır.')
           : isAdmin() && going.length ? h('div', { class: 'muted small' }, 'Yoklama: gelenleri ✓, gelmeyenleri ✕ ile işaretle. Etkinliği kapatmadan da alınabilir.') : null,
         going.length ? null : h('div', { class: 'muted' }, 'Henüz kimse yok.'),
+        isAdmin() ? btn('+ Listeye kişi ekle', busy(() => addAttendeeSheet(ev, atts)), 'ghost sm') : null,
         h('div', { class: 'plist' }, going.map((a, i) => h('div', { class: 'prow' },
           h('span', { class: 'pn' }, i + 1),
           h('div', { class: 'grow' },
@@ -735,6 +739,7 @@ export async function dashboard() {
       h('div', { class: 'tiles' },
         tile(d.past_events, 'Yapılan etkinlik', 'gold'), tile(d.upcoming_events, 'Aktif'), tile(d.approved_members, 'Onaylı üye'),
         tile(d.pending_members, 'Onay bekleyen', d.pending_members > 0 ? 'warn' : ''), tile(d.open_suggestions, 'Öneri'), tile(d.total_events, 'Toplam etkinlik')),
+      h('a', { href: '#/log', class: 'btn ghost block' }, 'Yönetici işlem kaydı'),
       search,
       body,
     ],
@@ -779,6 +784,7 @@ export async function members() {
         return h('div', { class: 'card' },
           admin ? h('div', { class: 'row', style: { justifyContent: 'flex-end' } }, badge('Yönetici', 'gold')) : null,
           info(m),
+          btn('Özel rozet ver', () => awardSheet(m, board), 'ghost sm'),
           m.id === me() ? null : h('div', { class: 'row' },
             btn(admin ? 'Yöneticiliği al' : 'Yönetici yap', busy(async (e) => {
               const ok = await confirmBox(admin ? 'Yöneticilik alınsın mı?' : 'Yönetici yapılsın mı?',
@@ -853,6 +859,7 @@ export async function profile() {
       h('div', { class: 'muted' }, state.session?.user?.email ?? ''),
       section('Rozetlerim'),
       board ? myBadges(board) : h('div', { class: 'muted' }, 'Rozetler yüklenemedi.'),
+      board?.seasons.length ? btn('Sezon özeti kartı', () => summarySheet(board), 'sec block') : null,
       isAdmin() ? null : h('a', { href: '#/ranking', class: 'btn sec block' }, 'Sıralamayı gör'),
       section('Bildirimler'),
       pushSection(),
