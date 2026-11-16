@@ -44,7 +44,7 @@ export const loadBoardSafe = () => loadBoard().catch(() => null);
 const SVG = {
   medal: '<path d="M8.5 2.500l3.5 6 3.5-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="15" r="6.5" fill="currentColor"/>',
   flame: '<path d="M12 2.500c.8 3.7 5 5.2 5 10.500a5 5 0 0 1-10 0c0-2 .9-3.3 2-4.3 0 2 .8 3.3 2 3.3.3-3.2-.8-5.5 1-9.500z" fill="currentColor"/>',
-  bike: '<circle cx="5" cy="16.500" r="3.200" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="19" cy="16.500" r="3.200" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 16.500l3.500-6h6.500l4 6M8.500 10.500L7.500 8.500H5M15 10.500l-1.500-4H11.500M10 16.500l3-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  shield: '<path d="M12 3l7.500 2.500v5.500c0 4.600-3 8.300-7.500 10-4.500-1.700-7.500-5.400-7.500-10V5.500z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
   bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.500c.7.7 1 1.5 1 2.500h6c0-1 .3-1.8 1-2.500A6 6 0 0 0 12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 function svg(name) {
@@ -66,8 +66,8 @@ function wedBadges(row) {
   const w = row.wed;
   const out = [];
   if (!w) return out;
-  if (w.rank && w.rank <= 3) out.push({ key: `wrank:${w.rank}`, cls: `place wed p${w.rank}`, icon: 'bike', keep: true, text: `${w.rank}.`, title: `Çarşamba sıralamasında ${w.rank}.` });
-  if (w.tier) out.push({ key: `wtier:${w.tier.key}`, cls: w.tier.key, icon: 'bike', text: w.tier.name, title: `Çarşamba ${w.tier.name}: bu sezon ${w.attended} Çarşamba Buluşması` });
+  if (w.rank && w.rank <= 3) out.push({ key: `wrank:${w.rank}`, cls: `place wed p${w.rank}`, icon: 'shield', keep: true, text: `${w.rank}.`, title: `Çarşamba sıralamasında ${w.rank}.` });
+  if (w.tier) out.push({ key: `wtier:${w.tier.key}`, cls: w.tier.key, icon: 'shield', text: w.tier.name, title: `Çarşamba ${w.tier.name}: bu sezon ${w.attended} Çarşamba Buluşması` });
   return out;
 }
 function eventBadges(row) {
