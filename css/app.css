@@ -203,3 +203,4 @@ select.in { width: 100%; background: var(--card2); color: var(--text); border: 1
 a.hint { color: inherit; }
 
 [hidden] { display: none !important; }
+.seg.four button { padding: 10px 4px; font-size: 13px; }

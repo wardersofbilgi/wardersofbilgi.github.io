@@ -158,7 +158,7 @@ export function ranking(board) {
         : null,
       season ? h('div', { class: 'muted' },
         `${season.name}: ${day(season.starts_at)} – ${season.open ? 'devam ediyor' : day(season.ends_at)} · ${season.events} etkinlik. `,
-        `Sıralama yoklamaya göredir. Rozetler: Bronz ${TIERS[2].min}, Gümüş ${TIERS[1].min}, Altın ${TIERS[0].min} etkinlik.`) : null,
+        `Sıralama katılıma göredir (yoklamalı etkinlikte “geldi”, yoklamasızda “Katılıyorum”). Rozetler: Bronz ${TIERS[2].min}, Gümüş ${TIERS[1].min}, Altın ${TIERS[0].min} etkinlik.`) : null,
       season ? h('div', { class: 'card' },
         rows.length ? null : h('div', { class: 'muted' }, q ? 'Aramayla eşleşen üye yok.' : 'Henüz üye yok.'),
         rows.map((r) => h('div', { class: 'rank' + (r.id === me() ? ' me' : '') },

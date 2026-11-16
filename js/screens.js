@@ -29,6 +29,16 @@ function eduPicker(initial) {
   return { el, get value() { return val; } };
 }
 
+// İki-üç seçenekli seçim kutusu
+function choice(options, initial, label) {
+  let val = initial;
+  const el = h('div', { class: 'seg', role: 'group', 'aria-label': label });
+  const draw = () => el.replaceChildren(...options.map(([k, text]) =>
+    h('button', { type: 'button', class: val === k ? 'on' : '', 'aria-pressed': String(val === k), onclick: () => { val = k; draw(); } }, text)));
+  draw();
+  return { el, get value() { return val; } };
+}
+
 // =====================================================================
 // Giriş, kayıt, onay bekleme
 // =====================================================================
@@ -200,6 +210,7 @@ export async function events() {
         h('div', { class: 'muted' }, fmtDate(e.starts_at)),
         h('div', { class: 'row wrap' },
           !e.published && badge('Taslak', 'warn'),
+          e.kind === 'wednesday' && badge('Çarşamba Buluşması', 'gold'),
           tab === 'past' && badge('Tamamlandı'),
           due && isAdmin() && badge('Tamamlanmayı bekliyor', 'warn'),
           tab === 'active' && e.registration_closed && badge('Liste kapalı'),
@@ -262,6 +273,7 @@ export async function eventDetail(id) {
   const dislikes = reacts.filter((r) => r.value === -1).length;
   const myReact = reacts.find((r) => r.user_id === uid)?.value;
   const done = !!ev.completed_at;
+  const rollcall = ev.has_rollcall !== false;
   const canRespond = ev.published && !ev.registration_closed && !done;
   const presentCount = going.filter((a) => a.present === true).length;
   const marked = going.filter((a) => a.present != null).length;
@@ -312,7 +324,9 @@ export async function eventDetail(id) {
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
         h('div', { class: 'row wrap' },
           !ev.published && badge('Taslak – üyeler göremez', 'warn'),
+          ev.kind === 'wednesday' && badge('Çarşamba Buluşması', 'gold'),
           done && badge('Tamamlandı', 'ok'),
+          !rollcall && badge('Yoklama yok'),
           !done && ev.registration_closed && badge('Katılım listesi kapalı')),
         h('h1', { class: 'title' }, ev.title),
         h('div', { class: 'row muted' }, icon('clock'), fmtDate(ev.starts_at))),
@@ -348,8 +362,9 @@ export async function eventDetail(id) {
       h('div', { class: 'card' },
         h('div', { class: 'row' },
           h('b', { class: 'grow', style: { color: 'var(--ok)' } }, `Katılanlar (${going.length})`),
-          marked ? badge(`Yoklama: ${presentCount}/${going.length} geldi`, 'gold') : null),
-        isAdmin() && going.length ? h('div', { class: 'muted small' }, 'Yoklama: gelenleri ✓, gelmeyenleri ✕ ile işaretle. Etkinliği kapatmadan da alınabilir.') : null,
+          rollcall && marked ? badge(`Yoklama: ${presentCount}/${going.length} geldi`, 'gold') : null),
+        !rollcall ? h('div', { class: 'muted small' }, 'Bu etkinlikte yoklama alınmaz. “Katılıyorum” diyenler, etkinlik tamamlanınca katılmış sayılır.')
+          : isAdmin() && going.length ? h('div', { class: 'muted small' }, 'Yoklama: gelenleri ✓, gelmeyenleri ✕ ile işaretle. Etkinliği kapatmadan da alınabilir.') : null,
         going.length ? null : h('div', { class: 'muted' }, 'Henüz kimse yok.'),
         h('div', { class: 'plist' }, going.map((a, i) => h('div', { class: 'prow' },
           h('span', { class: 'pn' }, i + 1),
@@ -357,7 +372,7 @@ export async function eventDetail(id) {
             h('div', { class: 'who2' }, h('span', { style: { fontWeight: '600' } }, a.profiles?.full_name ?? '?'), nameBadges(board, a.user_id)),
             a.profiles?.bike ? h('div', { class: 'muted small' }, a.profiles.bike) : null,
             a.reason ? h('div', { class: 'muted small', style: { fontStyle: 'italic' } }, `“${a.reason}”`) : null),
-          isAdmin()
+          !rollcall ? null : isAdmin()
             ? h('div', { class: 'row', style: { gap: '6px' } },
                 h('button', { class: 'chk ok' + (a.present === true ? ' on' : ''), 'aria-label': 'Geldi', 'aria-pressed': String(a.present === true), onclick: mark(a, true) }, '✓'),
                 h('button', { class: 'chk bad' + (a.present === false ? ' on' : ''), 'aria-label': 'Gelmedi', 'aria-pressed': String(a.present === false), onclick: mark(a, false) }, '✕'))
@@ -376,8 +391,9 @@ export async function eventDetail(id) {
         done
           ? btn('Tamamlandı işaretini kaldır', patch({ completed_at: null }), 'ghost block')
           : btn('Etkinliği tamamla', busy(async () => {
-              const unmarked = going.filter((a) => a.present == null).length;
-              const warn = unmarked ? `Dikkat: ${unmarked} kişinin yoklaması alınmadı. Yoklaması alınmayan katılım rozetlere ve seriye sayılmaz. ` : '';
+              const unmarked = rollcall ? going.filter((a) => a.present == null).length : 0;
+              const warn = unmarked ? `Dikkat: ${unmarked} kişinin yoklaması alınmadı. Yoklaması alınmayan katılım rozetlere ve seriye sayılmaz. `
+                : !rollcall ? 'Bu etkinlikte yoklama yok: “Katılıyorum” diyen herkes katılmış sayılacak. ' : '';
               if (!(await confirmBox('Etkinlik tamamlansın mı?', `${warn}Etkinlik “Geçmiş” sekmesine taşınır ve üyeler artık yanıt veremez. Yoklamayı sonra da düzenleyebilirsin.`, { yes: 'Tamamla', danger: unmarked > 0 }))) return;
               check(await sb.from('events').update({ completed_at: new Date().toISOString() }).eq('id', ev.id));
               router.refresh();
@@ -418,6 +434,9 @@ export async function eventEdit(id) {
   const note = input({ value: ev?.meeting_note ?? '', placeholder: 'Örn: 08:30’da benzinlikte, depolar dolu gelin' });
   const date = input({ type: 'date', 'aria-label': 'Tarih', value: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}` });
   const time = input({ type: 'time', 'aria-label': 'Saat', value: `${pad(start.getHours())}:${pad(start.getMinutes())}` });
+
+  const kind = choice([['normal', 'Normal Etkinlik'], ['wednesday', 'Çarşamba Buluşması']], ev?.kind ?? 'normal', 'Etkinlik türü');
+  const roll = choice([['yes', 'Yoklama Var'], ['no', 'Yoklama Yok']], ev?.has_rollcall === false ? 'no' : 'yes', 'Yoklama sistemi');
 
   const list = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' } });
   const map = routeMap(stops, {
@@ -481,6 +500,8 @@ export async function eventEdit(id) {
       meeting_note: note.value.trim() || null,
       starts_at: when.toISOString(),
       published: publish,
+      kind: kind.value,
+      has_rollcall: roll.value === 'yes',
     };
     let eventId = id;
     if (id) check(await sb.from('events').update(payload).eq('id', id));
@@ -502,6 +523,11 @@ export async function eventEdit(id) {
       field('Etkinlik adı', title), field('Açıklama', desc), field('Buluşma notu', note),
       section('Tarih ve saat'),
       h('div', { class: 'dt' }, date, time),
+      section('Etkinlik türü'),
+      kind.el,
+      section('Yoklama sistemi'),
+      roll.el,
+      h('div', { class: 'muted' }, 'Yoklama Var: rozet ve seri için yoklamada “geldi” işareti gerekir. Yoklama Yok: “Katılıyorum” demek yeterlidir.'),
       section('Rota'),
       h('div', { class: 'muted' }, 'Yer adını yazıp ara ya da haritaya dokunarak sırayla durak ekle. İlk durak buluşma noktası, son durak varış noktası olur.'),
       h('div', { class: 'row' }, h('div', { class: 'grow' }, query), searchBtn),
@@ -671,18 +697,21 @@ export async function dashboard() {
   const search = searchBox(dashQuery, '', (v) => { dashQuery = v; draw(); });
   function draw() {
     const seg = (key, label) => h('button', { class: dashTab === key ? 'on' : '', onclick: () => { if (dashTab !== key) { dashTab = key; draw(); } } }, label);
-    const label = dashTab === 'events' ? 'Etkinlik ara' : 'Üye ara';
+    const label = dashTab === 'events' || dashTab === 'wed' ? 'Etkinlik ara' : 'Üye ara';
     rank?.search(dashTab === 'ranking' ? dashQuery : '');
     search.placeholder = label;
     search.setAttribute('aria-label', label);
     const mem = d.members.map((m, i) => ({ m, i })).filter(({ m }) => matches(dashQuery, m.full_name, EDU[m.edu_status]));
-    const evs = d.events.filter((e) => matches(dashQuery, e.title));
+    const wedTab = dashTab === 'wed';
+    const pool = d.events.filter((e) => (e.kind === 'wednesday') === wedTab);
+    const nWed = d.events.filter((e) => e.kind === 'wednesday').length;
+    const evs = pool.filter((e) => matches(dashQuery, e.title));
     const none = h('div', { class: 'empty' }, 'Aramayla eşleşen kayıt yok.');
     const flat = (arr) => arr.flat(Infinity).filter((x) => x != null && x !== false);
     body.replaceChildren(...flat([
-      h('div', { class: 'seg' }, seg('members', 'Katılım'), seg('events', `Etkinlikler (${d.events.length})`), seg('ranking', 'Sıralama')),
+      h('div', { class: 'seg four' }, seg('members', 'Katılım'), seg('events', `Etkinlikler (${d.events.length - nWed})`), seg('wed', `Çarşamba (${nWed})`), seg('ranking', 'Sıralama')),
       dashTab === 'ranking' ? [rank ? rank.el : h('div', { class: 'empty' }, 'Sıralama yüklenemedi.')] : dashTab === 'members' ? [
-      h('div', { class: 'muted' }, 'Tüm zamanlar: sayı, yoklamada “geldi” işaretlendiği etkinlik sayısıdır. Sezon sıralaması “Sıralama” sekmesinde.'),
+      h('div', { class: 'muted' }, 'Tüm zamanlar: sayı, katıldığı etkinlik sayısıdır (yoklamalı etkinlikte “geldi” işareti, yoklamasız etkinlikte “Katılıyorum” yanıtı). Sezon sıralaması “Sıralama” sekmesinde.'),
       h('div', { class: 'card' },
         d.members.length ? (mem.length ? null : none) : h('div', { class: 'muted' }, 'Veri yok.'),
         mem.map(({ m, i }) => h('div', { class: 'rank' },
@@ -690,10 +719,10 @@ export async function dashboard() {
           h('div', { class: 'track' }, h('i', { style: { width: `${(m.attended / max) * 100}%` } })),
           h('div', { class: 'sub' }, dot('--ok'), `${m.yes_count} katılıyorum  `, dot('--bad'), `${m.no_count} katılamıyorum  `, dot('--muted'), `${Math.max(0, d.total_events - m.yes_count - m.no_count)} yanıtsız`)))),
       ] : [
-      d.events.length ? (evs.length ? null : none) : h('div', { class: 'empty' }, 'Henüz yayınlanmış etkinlik yok.'),
+      pool.length ? (evs.length ? null : none) : h('div', { class: 'empty' }, wedTab ? 'Henüz Çarşamba Buluşması yok.' : 'Henüz yayınlanmış etkinlik yok.'),
       evs.map((e) => h('button', { class: 'card', style: { textAlign: 'left', width: '100%', color: 'inherit' }, onclick: () => router.go(`#/event/${e.id}`) },
         h('b', null, e.title), h('div', { class: 'muted' }, fmtDate(e.starts_at)),
-        h('div', { class: 'muted' }, `${e.completed_at ? 'Tamamlandı' : 'Aktif'} · ✅ ${e.going} katılıyorum · 🏁 ${e.present ?? 0} geldi · ❌ ${e.not_going} · 👍 ${e.likes} · 👎 ${e.dislikes}`))),
+        h('div', { class: 'muted' }, `${e.completed_at ? 'Tamamlandı' : 'Aktif'} · ✅ ${e.going} katılıyorum · 🏁 ${e.present ?? 0} ${e.has_rollcall === false ? 'katıldı (yoklamasız)' : 'geldi'} · ❌ ${e.not_going} · 👍 ${e.likes} · 👎 ${e.dislikes}`))),
       ],
     ]));
   }
