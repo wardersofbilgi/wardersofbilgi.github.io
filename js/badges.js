@@ -15,11 +15,15 @@ const day = (iso) => dayFmt.format(new Date(iso));
 
 // ---------- Veri ----------
 export async function loadBoard() {
-  const [{ data, error }, aw] = await Promise.all([
+  const [{ data, error }, aw, st] = await Promise.all([
     sb.rpc('leaderboard'),
     sb.from('awards').select('id, user_id, title, icon, created_at').order('created_at'),
+    sb.from('app_settings').select('value').eq('key', 'badge_tiers').maybeSingle(),
   ]);
   if (error) throw error;
+  // Rozet puanları yönetici ayarından gelir; ayar yoksa varsayılan 16 / 24 / 32
+  const v = st.error ? null : st.data?.value;
+  for (const t of TIERS) if (Number.isInteger(v?.[t.key]) && v[t.key] > 0) t.min = v[t.key];
   const awards = aw.error ? [] : aw.data; // tablo henüz yoksa rozetsiz devam et
   const members = data.members.map((m) => ({ ...m, awards: awards.filter((a) => a.user_id === m.id) }));
   const seasons = data.seasons.map((s) => {
@@ -163,9 +167,32 @@ function seasonAdmin(board) {
     }), 'ghost block'));
 }
 
+// ---------- Rozet puanları (yönetici ayarı) ----------
+function tierSheet() {
+  const num = (t) => input({ type: 'number', inputmode: 'numeric', min: 1, max: 1000, value: t.min, 'aria-label': `${t.name} puanı` });
+  const [gold, silver, bronze] = TIERS.map(num);
+  sheet((close) => [
+    h('h2', null, 'Rozet puanları'),
+    h('div', { class: 'muted' }, `Bir sezonda kaç puanda hangi rozetin kazanılacağını belirler. Etkinlik ${POINTS.normal} puan, Çarşamba Buluşması ${POINTS.wednesday} puan sayılır.`),
+    field('Bronz', bronze), field('Gümüş', silver), field('Altın', gold),
+    h('div', { class: 'muted small' }, 'Değişiklik hemen geçerli olur ve açık sezondaki rozetler yeni puanlara göre yeniden hesaplanır. Geçmiş sezonlar da yeni puanlarla gösterilir.'),
+    btn('Kaydet', busy(async () => {
+      const b = Number(bronze.value), s = Number(silver.value), g = Number(gold.value);
+      if (![b, s, g].every((n) => Number.isInteger(n) && n >= 1 && n <= 1000)) return toast('Puanlar 1 ile 1000 arasında tam sayı olmalı.', true);
+      if (!(b < s && s < g)) return toast('Puanlar sırayla artmalı: Bronz < Gümüş < Altın.', true);
+      const { error } = await sb.from('app_settings').upsert({ key: 'badge_tiers', value: { bronze: b, silver: s, gold: g } });
+      if (error) return toast(error.message, true);
+      close();
+      toast('Rozet puanları güncellendi.');
+      router.refresh();
+    }), 'block'),
+    btn('Vazgeç', close, 'ghost block'),
+  ]);
+}
+
 // ---------- Sıralama ----------
 let selected = null; // seçili sezonun kimliği
-const RULES = `Etkinlik ${POINTS.normal} puan, Çarşamba Buluşması ${POINTS.wednesday} puan. Rozetler: Bronz ${TIERS[2].min}, Gümüş ${TIERS[1].min}, Altın ${TIERS[0].min} puan.`;
+const rules = () => `Etkinlik ${POINTS.normal} puan, Çarşamba Buluşması ${POINTS.wednesday} puan. Rozetler: Bronz ${TIERS[2].min}, Gümüş ${TIERS[1].min}, Altın ${TIERS[0].min} puan.`;
 export function ranking(board) {
   const el = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
   let query = '';
@@ -176,13 +203,14 @@ export function ranking(board) {
     const max = Math.max(TIERS[0].min, ...(season ? season.rows.map((r) => r.points) : [0]));
     const kids = [
       isAdmin() ? seasonAdmin(board) : null,
+      isAdmin() ? btn(`Rozet puanları: ${TIERS[2].min} / ${TIERS[1].min} / ${TIERS[0].min}`, tierSheet, 'ghost block') : null,
       !season ? h('div', { class: 'empty' }, 'Henüz sezon başlatılmadı. Sezon başlayınca sıralama burada görünecek.') : null,
       season && board.seasons.length > 1
         ? h('select', { class: 'in', 'aria-label': 'Sezon', onchange: (e) => { selected = e.target.value; draw(); } },
             board.seasons.map((s) => h('option', { value: s.id, selected: s.id === season.id }, s.name + (s.open ? ' (açık)' : ''))))
         : null,
       season ? h('div', { class: 'muted' },
-        `${season.name}: ${day(season.starts_at)} – ${season.open ? 'devam ediyor' : day(season.ends_at)} · ${season.events} etkinlik, ${season.wed_events ?? 0} Çarşamba Buluşması. `, RULES) : null,
+        `${season.name}: ${day(season.starts_at)} – ${season.open ? 'devam ediyor' : day(season.ends_at)} · ${season.events} etkinlik, ${season.wed_events ?? 0} Çarşamba Buluşması. `, rules()) : null,
       season ? h('div', { class: 'card' },
         rows.length ? null : h('div', { class: 'muted' }, q ? 'Aramayla eşleşen üye yok.' : 'Henüz üye yok.'),
         rows.map((r) => h('div', { class: 'rank' + (r.id === me() ? ' me' : '') },
@@ -215,7 +243,7 @@ export function myBadges(board) {
       h('div', { class: 'track', style: { height: '8px' } }, h('i', { style: { width: `${Math.min(100, (row.points / goal) * 100)}%` } })),
       h('div', { class: 'muted small' }, `${row.attended} etkinlik × ${POINTS.normal} + ${row.wed} Çarşamba × ${POINTS.wednesday} = ${row.points} puan. `,
         next ? `${next.name} rozete ${next.min - row.points} puan kaldı.` : 'En üst rozete ulaştın.'),
-      h('div', { class: 'muted small' }, RULES)));
+      h('div', { class: 'muted small' }, rules())));
   } else {
     out.push(h('div', { class: 'card muted' }, 'Şu an açık bir sezon yok. Sezon başlayınca rozetin burada görünecek.'));
   }
