@@ -201,3 +201,5 @@ input.in::placeholder, textarea.in::placeholder { color: #7d7364; }
 .rank.me { background: rgba(201,161,90,.08); border-radius: 8px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
 select.in { width: 100%; background: var(--card2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; font-size: 16px; }
 a.hint { color: inherit; }
+
+[hidden] { display: none !important; }
