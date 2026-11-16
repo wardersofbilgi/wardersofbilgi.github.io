@@ -711,13 +711,13 @@ export async function dashboard() {
     body.replaceChildren(...flat([
       h('div', { class: 'seg four' }, seg('members', 'Katılım'), seg('events', `Etkinlikler (${d.events.length - nWed})`), seg('wed', `Çarşamba (${nWed})`), seg('ranking', 'Sıralama')),
       dashTab === 'ranking' ? [rank ? rank.el : h('div', { class: 'empty' }, 'Sıralama yüklenemedi.')] : dashTab === 'members' ? [
-      h('div', { class: 'muted' }, 'Tüm zamanlar: sayı, katıldığı etkinlik sayısıdır (yoklamalı etkinlikte “geldi” işareti, yoklamasız etkinlikte “Katılıyorum” yanıtı). Sezon sıralaması “Sıralama” sekmesinde.'),
+      h('div', { class: 'muted' }, 'Tüm zamanlar: sayı, katıldığı normal etkinlik sayısıdır (yoklamalı etkinlikte “geldi” işareti, yoklamasız etkinlikte “Katılıyorum” yanıtı). Çarşamba Buluşmaları ayrı sayılır. Sezon sıralaması “Sıralama” sekmesinde.'),
       h('div', { class: 'card' },
         d.members.length ? (mem.length ? null : none) : h('div', { class: 'muted' }, 'Veri yok.'),
         mem.map(({ m, i }) => h('div', { class: 'rank' },
           h('span', { class: 'n' }, i + 1), h('span', { class: 'who2' }, h('span', { style: { fontWeight: '600' } }, m.full_name), EDU[m.edu_status] ? h('span', { class: 'muted small' }, EDU[m.edu_status]) : null, nameBadges(board, m.id)), h('span', { class: 'v' }, m.attended),
           h('div', { class: 'track' }, h('i', { style: { width: `${(m.attended / max) * 100}%` } })),
-          h('div', { class: 'sub' }, dot('--ok'), `${m.yes_count} katılıyorum  `, dot('--bad'), `${m.no_count} katılamıyorum  `, dot('--muted'), `${Math.max(0, d.total_events - m.yes_count - m.no_count)} yanıtsız`)))),
+          h('div', { class: 'sub' }, `☕ ${m.wed_attended ?? 0} Çarşamba  `, dot('--ok'), `${m.yes_count} katılıyorum  `, dot('--bad'), `${m.no_count} katılamıyorum  `, dot('--muted'), `${Math.max(0, d.total_events - m.yes_count - m.no_count)} yanıtsız`)))),
       ] : [
       pool.length ? (evs.length ? null : none) : h('div', { class: 'empty' }, wedTab ? 'Henüz Çarşamba Buluşması yok.' : 'Henüz yayınlanmış etkinlik yok.'),
       evs.map((e) => h('button', { class: 'card', style: { textAlign: 'left', width: '100%', color: 'inherit' }, onclick: () => router.go(`#/event/${e.id}`) },

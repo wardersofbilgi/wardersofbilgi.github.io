@@ -204,3 +204,4 @@ a.hint { color: inherit; }
 
 [hidden] { display: none !important; }
 .seg.four button { padding: 10px 4px; font-size: 13px; }
+.bdg.place.wed { box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.45); }
