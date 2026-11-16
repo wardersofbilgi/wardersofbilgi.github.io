@@ -1,12 +1,14 @@
 // Sezonlar, sıralama ve rozetler. Rozetler saklanmaz; yoklama ve öneri verisinden hesaplanır.
 import { sb, me, isAdmin, h, toast, confirmBox, sheet, busy, btn, field, input, pad, router } from './core.js';
 
+// Tek rozet, puanla: etkinlik 2 puan, Çarşamba Buluşması 1 puan (sezonluk)
+export const POINTS = { normal: 2, wednesday: 1 };
 export const TIERS = [
-  { key: 'gold', name: 'Altın', min: 16 },
-  { key: 'silver', name: 'Gümüş', min: 12 },
-  { key: 'bronze', name: 'Bronz', min: 8 },
+  { key: 'gold', name: 'Altın', min: 32 },
+  { key: 'silver', name: 'Gümüş', min: 24 },
+  { key: 'bronze', name: 'Bronz', min: 16 },
 ];
-const STREAK_MIN = 3; // bu kadar art arda katılımdan sonra seri rozeti görünür
+const STREAK_MIN = 3; // bu kadar art arda katılımdan sonra seri yazısı görünür
 const tierOf = (n) => TIERS.find((t) => n >= t.min) ?? null;
 const dayFmt = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
 const day = (iso) => dayFmt.format(new Date(iso));
@@ -22,21 +24,19 @@ export async function loadBoard() {
   const members = data.members.map((m) => ({ ...m, awards: awards.filter((a) => a.user_id === m.id) }));
   const seasons = data.seasons.map((s) => {
     const ideas = data.top_suggestions.filter((x) => x.season_id === s.id);
-    // Etkinlikler ve Çarşamba Buluşmaları ayrı sayılır.
-    // Sıra: aynı sayıda katılanlar aynı sırayı paylaşır, sonraki sıra bir artar (1, 1, 2, 3)
-    const count = (kind) => {
-      const att = new Map(data.stats.filter((x) => x.season_id === s.id && (x.kind ?? 'normal') === kind).map((x) => [x.user_id, x.attended]));
-      const levels = [...new Set([...att.values()])].sort((a, b) => b - a);
-      return (id) => {
-        const attended = att.get(id) ?? 0;
-        return { attended, rank: attended > 0 ? levels.indexOf(attended) + 1 : null, tier: tierOf(attended) };
-      };
-    };
-    const normal = count('normal');
-    const wed = count('wednesday');
-    const rows = members
-      .map((m) => ({ ...m, ...normal(m.id), wed: wed(m.id), idea: ideas.find((x) => x.user_id === m.id) ?? null }))
-      .sort((a, b) => b.attended - a.attended || a.full_name.localeCompare(b.full_name, 'tr'));
+    const count = (kind) => new Map(data.stats.filter((x) => x.season_id === s.id && (x.kind ?? 'normal') === kind).map((x) => [x.user_id, x.attended]));
+    const ev = count('normal');
+    const wd = count('wednesday');
+    const base = members.map((m) => {
+      const attended = ev.get(m.id) ?? 0;
+      const wed = wd.get(m.id) ?? 0;
+      return { ...m, attended, wed, points: attended * POINTS.normal + wed * POINTS.wednesday, idea: ideas.find((x) => x.user_id === m.id) ?? null };
+    });
+    // Sıra: aynı puandakiler aynı sırayı paylaşır, sonraki sıra bir artar (1, 1, 2, 3)
+    const levels = [...new Set(base.map((r) => r.points).filter((n) => n > 0))].sort((a, b) => b - a);
+    const rows = base
+      .map((r) => ({ ...r, rank: r.points > 0 ? levels.indexOf(r.points) + 1 : null, tier: tierOf(r.points) }))
+      .sort((a, b) => b.points - a.points || a.full_name.localeCompare(b.full_name, 'tr'));
     return { ...s, open: !s.ends_at, rows, byId: new Map(rows.map((r) => [r.id, r])) };
   });
   return { seasons, current: seasons.find((s) => s.open) ?? null, members: new Map(members.map((m) => [m.id, m])), awards };
@@ -63,56 +63,27 @@ function svg(name) {
   return s.firstChild;
 }
 
-// Bir üyenin bir sezondaki rozetleri: [{ key, cls, icon, text, title }]
-// kind: 'normal' | 'wednesday' | undefined (ikisi birden)
-function seasonBadges(row, kind) {
-  if (!row) return [];
-  const out = [];
-  if (kind !== 'wednesday') out.push(...eventBadges(row));
-  if (kind !== 'normal') out.push(...wedBadges(row));
-  return out;
-}
-function wedBadges(row) {
-  const w = row.wed;
-  const out = [];
-  if (!w) return out;
-  if (w.rank && w.rank <= 3) out.push({ key: `wrank:${w.rank}`, cls: `place wed p${w.rank}`, icon: 'shield', keep: true, text: `${w.rank}.`, title: `Çarşamba sıralamasında ${w.rank}.` });
-  if (w.tier) out.push({ key: `wtier:${w.tier.key}`, cls: w.tier.key, icon: 'shield', text: w.tier.name, title: `Çarşamba ${w.tier.name}: bu sezon ${w.attended} Çarşamba Buluşması` });
-  return out;
-}
-function eventBadges(row) {
-  const out = [];
-  if (row.rank && row.rank <= 3) out.push({ key: `rank:${row.rank}`, cls: `place p${row.rank}`, text: `${row.rank}.`, title: `Sezon sıralamasında ${row.rank}.` });
-  if (row.tier) out.push({ key: `tier:${row.tier.key}`, cls: row.tier.key, icon: 'medal', text: row.tier.name, title: `${row.tier.name} üye: bu sezon ${row.attended} etkinlik` });
-  if (row.idea) out.push({ key: 'idea', cls: 'idea', icon: 'bulb', text: 'Fikir', title: `Sezonun en beğenilen önerisi: ${row.idea.title} (${row.idea.likes} beğeni)` });
-  return out;
-}
-const streakBadge = (m, kind) => !m ? [] : [
-  kind !== 'wednesday' && m.streak >= STREAK_MIN ? { key: 'streak', cls: 'streak', icon: 'flame', text: String(m.streak), title: `${m.streak} etkinliktir art arda katılıyor` } : null,
-  kind !== 'normal' && m.wed_streak >= STREAK_MIN ? { key: 'wstreak', cls: 'streak', icon: 'flame', text: `Ç${m.wed_streak}`, title: `${m.wed_streak} Çarşamba Buluşmasıdır art arda katılıyor` } : null,
-].filter(Boolean);
+// Seviye rozeti (sezon puanına göre). Tek rozet türü budur; isimlerin yanında yalnızca bu görünür.
+const tierBadge = (row) => (row?.tier ? [{ key: `tier:${row.tier.key}`, cls: row.tier.key, icon: 'medal', keep: true, text: row.tier.name, title: `${row.tier.name} üye: bu sezon ${row.points} puan` }] : []);
+const ideaBadge = (row) => (row?.idea ? [{ key: 'idea', cls: 'idea', icon: 'bulb', text: 'Fikir', title: `Sezonun en beğenilen önerisi: ${row.idea.title} (${row.idea.likes} beğeni)` }] : []);
 
 const chip = (b, mini) =>
-  h('span', { class: `bdg ${b.cls}` + (mini ? ' mini' : ''), title: b.title, role: 'img', 'aria-label': b.title }, b.icon ? svg(b.icon) : null, mini && b.icon && !b.keep && !b.key.endsWith('streak') ? null : b.text);
+  h('span', { class: `bdg ${b.cls}` + (mini ? ' mini' : ''), title: b.title, role: 'img', 'aria-label': b.title }, b.icon ? svg(b.icon) : null, mini && b.icon && !b.keep ? null : b.text);
 
-// Yöneticinin elle verdiği özel rozetler (kalıcı)
+// Yöneticinin elle verdiği özel rozetler (kalıcı; profilde görünür)
 export const AWARD_ICONS = ['star', 'crown', 'road', 'helmet', 'heart', 'wrench'];
-const awardBadges = (m) => (m?.awards ?? []).map((a) => ({ key: `award:${a.id}`, cls: 'award', icon: AWARD_ICONS.includes(a.icon) ? a.icon : 'star', text: a.title, title: `Özel rozet: ${a.title}` }));
 export const awardChip = (a, mini) => chip({ key: 'award', cls: 'award', icon: AWARD_ICONS.includes(a.icon) ? a.icon : 'star', text: a.title, title: a.title ? `Özel rozet: ${a.title}` : 'Özel rozet' }, mini);
 
-// İsimlerin yanında en değerli iki rozet gösterilir; gerisi "+N" olarak özetlenir (tamamı profilde)
-const WEIGHT = ['rank:', 'wrank:', 'tier:', 'wtier:', 'award:', 'idea', 'streak', 'wstreak'];
-const weight = (b) => { const i = WEIGHT.findIndex((w) => b.key.startsWith(w)); return i < 0 ? 99 : i; };
-const NAME_MAX = 2;
+// İsimlerin yanında: yalnızca açık sezonun seviye rozeti
 export function nameBadges(board, uid) {
-  if (!board) return null;
-  const m = board.members.get(uid);
-  const list = [...seasonBadges(board.current?.byId.get(uid)), ...awardBadges(m), ...streakBadge(m)].sort((a, b) => weight(a) - weight(b));
-  if (!list.length) return null;
-  const rest = list.slice(NAME_MAX);
-  return h('span', { class: 'bdgs' }, list.slice(0, NAME_MAX).map((b) => chip(b, true)),
-    rest.length ? h('span', { class: 'bdg more mini', title: rest.map((b) => b.title).join(' · '), role: 'img', 'aria-label': `ve ${rest.length} rozet daha` }, `+${rest.length}`) : null);
+  const list = board ? tierBadge(board.current?.byId.get(uid)) : [];
+  return list.length ? h('span', { class: 'bdgs' }, list.map((b) => chip(b, true))) : null;
 }
+
+const streakText = (m) => [
+  m.streak >= STREAK_MIN ? `${m.streak} etkinlik art arda` : null,
+  m.wed_streak >= STREAK_MIN ? `${m.wed_streak} Çarşamba art arda` : null,
+].filter(Boolean).join(' · ');
 
 // Sezon özeti kartı için veriler
 export function seasonSummary(board, season, uid) {
@@ -120,8 +91,7 @@ export function seasonSummary(board, season, uid) {
   const m = board.members.get(uid);
   return {
     season: season?.name ?? '', name: m?.full_name ?? '',
-    events: r?.attended ?? 0, rank: r?.rank ?? null, tier: r?.tier?.name ?? null,
-    wed: r?.wed.attended ?? 0, wedRank: r?.wed.rank ?? null, wedTier: r?.wed.tier?.name ?? null,
+    events: r?.attended ?? 0, wed: r?.wed ?? 0, points: r?.points ?? 0, rank: r?.rank ?? null, tier: r?.tier?.name ?? null,
     streak: m?.streak ?? 0, wedStreak: m?.wed_streak ?? 0,
     idea: r?.idea?.title ?? null, awards: (m?.awards ?? []).map((a) => a.title),
   };
@@ -131,7 +101,8 @@ export function seasonSummary(board, season, uid) {
 export function announceNew(board) {
   const uid = me();
   if (!board?.current || !uid) return;
-  const now = seasonBadges(board.current.byId.get(uid)).map((b) => ({ id: `${board.current.id}:${b.key}`, b }));
+  const row = board.current.byId.get(uid);
+  const now = [...tierBadge(row), ...ideaBadge(row)].map((b) => ({ id: `${board.current.id}:p:${b.key}`, b }));
   const store = `wob-badges-${uid}`;
   try {
     const raw = localStorage.getItem(store);
@@ -194,20 +165,15 @@ function seasonAdmin(board) {
 
 // ---------- Sıralama ----------
 let selected = null; // seçili sezonun kimliği
-let rankKind = 'normal'; // 'normal' | 'wednesday'
+const RULES = `Etkinlik ${POINTS.normal} puan, Çarşamba Buluşması ${POINTS.wednesday} puan. Rozetler: Bronz ${TIERS[2].min}, Gümüş ${TIERS[1].min}, Altın ${TIERS[0].min} puan.`;
 export function ranking(board) {
   const el = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px' } });
   let query = '';
   function draw() {
     const season = board.seasons.find((s) => s.id === selected) ?? board.current ?? board.seasons[0] ?? null;
     const q = query.trim().toLocaleLowerCase('tr');
-    const wedMode = rankKind === 'wednesday';
-    const val = (r) => (wedMode ? r.wed : r);
-    const all = season ? [...season.rows].sort((a, b) => val(b).attended - val(a).attended || a.full_name.localeCompare(b.full_name, 'tr')) : [];
-    const rows = all.filter((r) => !q || r.full_name.toLocaleLowerCase('tr').includes(q));
-    const max = Math.max(TIERS[0].min, ...all.map((r) => val(r).attended));
-    const seg = (key, label) => h('button', { type: 'button', class: rankKind === key ? 'on' : '', onclick: () => { if (rankKind !== key) { rankKind = key; draw(); } } }, label);
-    const unit = wedMode ? 'Çarşamba Buluşması' : 'etkinlik';
+    const rows = season ? season.rows.filter((r) => !q || r.full_name.toLocaleLowerCase('tr').includes(q)) : [];
+    const max = Math.max(TIERS[0].min, ...(season ? season.rows.map((r) => r.points) : [0]));
     const kids = [
       isAdmin() ? seasonAdmin(board) : null,
       !season ? h('div', { class: 'empty' }, 'Henüz sezon başlatılmadı. Sezon başlayınca sıralama burada görünecek.') : null,
@@ -215,18 +181,17 @@ export function ranking(board) {
         ? h('select', { class: 'in', 'aria-label': 'Sezon', onchange: (e) => { selected = e.target.value; draw(); } },
             board.seasons.map((s) => h('option', { value: s.id, selected: s.id === season.id }, s.name + (s.open ? ' (açık)' : ''))))
         : null,
-      season ? h('div', { class: 'seg' }, seg('normal', 'Etkinlikler'), seg('wednesday', 'Çarşamba')) : null,
       season ? h('div', { class: 'muted' },
-        `${season.name}: ${day(season.starts_at)} – ${season.open ? 'devam ediyor' : day(season.ends_at)} · ${wedMode ? season.wed_events ?? 0 : season.events} ${unit}. `,
-        `Sıralama katılıma göredir (yoklamalı etkinlikte “geldi”, yoklamasızda “Katılıyorum”). Rozetler: Bronz ${TIERS[2].min}, Gümüş ${TIERS[1].min}, Altın ${TIERS[0].min} ${unit}.`) : null,
+        `${season.name}: ${day(season.starts_at)} – ${season.open ? 'devam ediyor' : day(season.ends_at)} · ${season.events} etkinlik, ${season.wed_events ?? 0} Çarşamba Buluşması. `, RULES) : null,
       season ? h('div', { class: 'card' },
         rows.length ? null : h('div', { class: 'muted' }, q ? 'Aramayla eşleşen üye yok.' : 'Henüz üye yok.'),
         rows.map((r) => h('div', { class: 'rank' + (r.id === me() ? ' me' : '') },
-          h('span', { class: 'n' }, val(r).rank ?? '–'),
+          h('span', { class: 'n' + (r.rank && r.rank <= 3 ? ` top p${r.rank}` : '') }, r.rank ?? '–'),
           h('span', { class: 'who2' }, h('span', { style: { fontWeight: '600' } }, r.full_name),
-            h('span', { class: 'bdgs' }, [...seasonBadges(r, rankKind), ...(season.open ? streakBadge(r, rankKind) : [])].map((b) => chip(b)))),
-          h('span', { class: 'v' }, val(r).attended),
-          h('div', { class: 'track' }, h('i', { style: { width: `${(val(r).attended / max) * 100}%` } }))))) : null,
+            h('span', { class: 'bdgs' }, tierBadge(r).map((b) => chip(b)))),
+          h('span', { class: 'v' }, r.points, h('small', null, ' puan')),
+          h('div', { class: 'track' }, h('i', { style: { width: `${(r.points / max) * 100}%` } })),
+          h('div', { class: 'sub' }, `${r.attended} etkinlik · ${r.wed} Çarşamba`, season.open && streakText(r) ? ` · ${streakText(r)}` : '')))) : null,
     ].filter(Boolean);
     el.replaceChildren(...kids);
   }
@@ -242,44 +207,40 @@ export function myBadges(board) {
   const row = cur?.byId.get(uid);
   const out = [];
   if (cur && row) {
-    const card = (title, v, badges, unit, unitTo) => {
-      const next = [...TIERS].reverse().find((t) => v.attended < t.min) ?? null;
-      const goal = next?.min ?? TIERS[0].min;
-      return h('div', { class: 'card' },
-        h('div', { class: 'row' }, h('b', { class: 'grow' }, title), h('span', { class: 'muted small' }, v.rank ? `${v.rank}. sıra` : 'Sırada değil')),
-        badges.length ? h('div', { class: 'bdgs' }, badges.map((b) => chip(b))) : h('div', { class: 'muted' }, 'Bu sezon henüz rozetin yok.'),
-        h('div', { class: 'track', style: { height: '8px' } }, h('i', { style: { width: `${Math.min(100, (v.attended / goal) * 100)}%` } })),
-        h('div', { class: 'muted small' }, next
-          ? `${v.attended} ${unitTo} katıldın. ${next.name} rozete ${next.min - v.attended} ${unit} kaldı.`
-          : `${v.attended} ${unitTo} katıldın. En üst rozete ulaştın.`));
-    };
-    out.push(card(`${cur.name} · Etkinlikler`, row, seasonBadges(row, 'normal'), 'etkinlik', 'etkinliğe'));
-    out.push(card(`${cur.name} · Çarşamba Buluşmaları`, row.wed, seasonBadges(row, 'wednesday'), 'buluşma', 'Çarşamba Buluşmasına'));
-  } else {
-    out.push(h('div', { class: 'card muted' }, 'Şu an açık bir sezon yok. Sezon başlayınca rozetlerin burada görünecek.'));
-  }
-  if (m?.awards?.length) {
+    const next = [...TIERS].reverse().find((t) => row.points < t.min) ?? null;
+    const goal = next?.min ?? TIERS[0].min;
     out.push(h('div', { class: 'card' },
-      h('b', null, 'Özel rozetler'),
-      h('div', { class: 'bdgs' }, m.awards.map((a) => awardChip(a))),
-      h('div', { class: 'muted small' }, 'Yöneticilerin verdiği rozetlerdir; kalıcıdır.')));
+      h('div', { class: 'row' }, h('b', { class: 'grow' }, cur.name), h('span', { class: 'muted small' }, row.rank ? `${row.rank}. sıra` : 'Sırada değil')),
+      h('div', { class: 'row' }, h('span', { class: 'pts' }, row.points, h('small', null, ' puan')), h('span', { class: 'bdgs' }, tierBadge(row).map((b) => chip(b)))),
+      h('div', { class: 'track', style: { height: '8px' } }, h('i', { style: { width: `${Math.min(100, (row.points / goal) * 100)}%` } })),
+      h('div', { class: 'muted small' }, `${row.attended} etkinlik × ${POINTS.normal} + ${row.wed} Çarşamba × ${POINTS.wednesday} = ${row.points} puan. `,
+        next ? `${next.name} rozete ${next.min - row.points} puan kaldı.` : 'En üst rozete ulaştın.'),
+      h('div', { class: 'muted small' }, RULES)));
+  } else {
+    out.push(h('div', { class: 'card muted' }, 'Şu an açık bir sezon yok. Sezon başlayınca rozetin burada görünecek.'));
+  }
+  const extra = [...ideaBadge(row).map((b) => chip(b)), ...(m?.awards ?? []).map((a) => awardChip(a))];
+  if (extra.length) {
+    out.push(h('div', { class: 'card' },
+      h('b', null, 'Diğer rozetler'),
+      h('div', { class: 'bdgs' }, extra),
+      h('div', { class: 'muted small' }, 'Fikir: sezonun en beğenilen önerisi. Özel rozetleri yöneticiler verir ve kalıcıdır.')));
   }
   if (m) {
     out.push(h('div', { class: 'card' },
-      h('div', { class: 'row' }, h('b', { class: 'grow' }, 'Katılım serisi'), streakBadge(m).map((b) => chip(b))),
+      h('b', null, 'Katılım serisi'),
       h('div', { class: 'muted' }, `Etkinlik: art arda ${m.streak} · En uzun: ${m.best_streak} · Toplam ${m.total}`),
       h('div', { class: 'muted' }, `Çarşamba: art arda ${m.wed_streak ?? 0} · En uzun: ${m.wed_best_streak ?? 0} · Toplam ${m.wed_total ?? 0}`),
-      h('div', { class: 'muted small' }, `İki seri ayrı tutulur. Seri rozeti art arda ${STREAK_MIN} katılımda başlar; kaçırılan her etkinlik kendi serisini sıfırlar.`)));
+      h('div', { class: 'muted small' }, 'Kaçırılan her etkinlik kendi serisini sıfırlar. Seri sezonla sıfırlanmaz.')));
   }
-  const past = board.seasons.filter((s) => !s.open).map((s) => ({ s, r: s.byId.get(uid) })).filter(({ r }) => r && (r.attended > 0 || r.wed.attended > 0 || r.idea));
+  const past = board.seasons.filter((s) => !s.open).map((s) => ({ s, r: s.byId.get(uid) })).filter(({ r }) => r && (r.points > 0 || r.idea));
   if (past.length) {
     out.push(h('div', { class: 'card' },
       h('b', null, 'Geçmiş sezonlar'),
       past.map(({ s, r }) => h('div', { class: 'prow' },
         h('div', { class: 'grow' }, h('div', { style: { fontWeight: '600' } }, s.name),
-          h('div', { class: 'muted small' }, `${r.attended} etkinlik${r.rank ? ` · ${r.rank}. sıra` : ''}${r.wed.attended ? ` · ${r.wed.attended} Çarşamba${r.wed.rank ? ` (${r.wed.rank}. sıra)` : ''}` : ''}`)),
-        h('span', { class: 'bdgs' }, seasonBadges(r).map((b) => chip(b)))))));
+          h('div', { class: 'muted small' }, `${r.points} puan${r.rank ? ` · ${r.rank}. sıra` : ''} · ${r.attended} etkinlik, ${r.wed} Çarşamba`)),
+        h('span', { class: 'bdgs' }, [...tierBadge(r), ...ideaBadge(r)].map((b) => chip(b)))))));
   }
   return out;
 }
-

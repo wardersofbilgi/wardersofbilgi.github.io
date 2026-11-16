@@ -201,17 +201,18 @@ async function drawSummary(d) {
   let name = d.name;
   while (x.measureText(name).width > W - 160 && name.length > 4) name = `${name.slice(0, -2).trimEnd()}…`;
   x.fillText(name, W / 2, 590);
+  x.fillStyle = '#C9A15A'; x.font = font(700, 44);
+  x.fillText([`${d.points} puan`, d.rank ? `${d.rank}. sıra` : null, d.tier ? `${d.tier} rozet` : null].filter(Boolean).join(' · '), W / 2, 655);
   // İki kutu: etkinlik ve Çarşamba
-  const box = (bx, label, count, rank, tier) => {
+  const box = (bx, label, count, sub) => {
     x.fillStyle = '#17140F'; x.strokeStyle = '#3A3226'; x.lineWidth = 3;
-    x.beginPath(); x.roundRect(bx, 660, 460, 330, 32); x.fill(); x.stroke();
-    x.fillStyle = '#C9A15A'; x.font = font(800, 150); x.fillText(String(count), bx + 230, 815);
-    x.fillStyle = '#F2EBDD'; x.font = font(700, 40); x.fillText(label, bx + 230, 880);
-    x.fillStyle = '#B9AE9A'; x.font = font(600, 34);
-    x.fillText([rank ? `${rank}. sıra` : null, tier ? `${tier} rozet` : null].filter(Boolean).join(' · ') || 'Sırada değil', bx + 230, 940);
+    x.beginPath(); x.roundRect(bx, 710, 460, 300, 32); x.fill(); x.stroke();
+    x.fillStyle = '#C9A15A'; x.font = font(800, 140); x.fillText(String(count), bx + 230, 855);
+    x.fillStyle = '#F2EBDD'; x.font = font(700, 40); x.fillText(label, bx + 230, 918);
+    x.fillStyle = '#B9AE9A'; x.font = font(600, 32); x.fillText(sub, bx + 230, 968);
   };
-  box(70, 'Etkinlik', d.events, d.rank, d.tier);
-  box(550, 'Çarşamba Buluşması', d.wed, d.wedRank, d.wedTier);
+  box(70, 'Etkinlik', d.events, '2 puan');
+  box(550, 'Çarşamba Buluşması', d.wed, '1 puan');
   x.fillStyle = '#F2EBDD'; x.font = font(600, 40);
   const lines = [
     d.streak >= 3 || d.wedStreak >= 3 ? [d.streak >= 3 ? `${d.streak} etkinlik art arda` : null, d.wedStreak >= 3 ? `${d.wedStreak} Çarşamba art arda` : null].filter(Boolean).join(' · ') : null,
@@ -221,7 +222,7 @@ async function drawSummary(d) {
   lines.slice(0, 3).forEach((t, i) => {
     let s = t;
     while (x.measureText(s).width > W - 160 && s.length > 8) s = `${s.slice(0, -2).trimEnd()}…`;
-    x.fillText(s, W / 2, 1075 + i * 62);
+    x.fillText(s, W / 2, 1090 + i * 60);
   });
   x.fillStyle = '#8C8272'; x.font = font(600, 30); x.fillText('wardersofbilgi.github.io', W / 2, H - 70);
   return c;

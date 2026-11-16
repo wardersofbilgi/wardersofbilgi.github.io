@@ -722,7 +722,7 @@ export async function dashboard() {
     body.replaceChildren(...flat([
       h('div', { class: 'seg four' }, seg('members', 'Katılım'), seg('events', `Etkinlikler (${d.events.length - nWed})`), seg('wed', `Çarşamba (${nWed})`), seg('ranking', 'Sıralama')),
       dashTab === 'ranking' ? [rank ? rank.el : h('div', { class: 'empty' }, 'Sıralama yüklenemedi.')] : dashTab === 'members' ? [
-      h('div', { class: 'muted' }, 'Tüm zamanlar: sayı, katıldığı normal etkinlik sayısıdır (yoklamalı etkinlikte “geldi” işareti, yoklamasız etkinlikte “Katılıyorum” yanıtı). Çarşamba Buluşmaları ayrı sayılır. Sezon sıralaması “Sıralama” sekmesinde.'),
+      h('div', { class: 'muted' }, 'Tüm zamanlar: sayı, katıldığı normal etkinlik sayısıdır (yoklamalı etkinlikte “geldi” işareti, yoklamasız etkinlikte “Katılıyorum” yanıtı). Çarşamba sayısı altında yazar. Sezon puanı ve rozetler “Sıralama” sekmesinde.'),
       h('div', { class: 'card' },
         d.members.length ? (mem.length ? null : none) : h('div', { class: 'muted' }, 'Veri yok.'),
         mem.map(({ m, i }) => h('div', { class: 'rank' },
