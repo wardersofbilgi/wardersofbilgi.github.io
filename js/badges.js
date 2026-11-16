@@ -78,16 +78,14 @@ const chip = (b, mini) =>
 export const AWARD_ICONS = ['star', 'crown', 'road', 'helmet', 'heart', 'wrench'];
 export const awardChip = (a, mini) => chip({ key: 'award', cls: 'award', icon: AWARD_ICONS.includes(a.icon) ? a.icon : 'star', text: a.title, title: a.title ? `Özel rozet: ${a.title}` : 'Özel rozet' }, mini);
 
-// İsimlerin yanında: yalnızca açık sezonun seviye rozeti
+// Etkinlik serisi: art arda en az STREAK_MIN etkinlik (sezonla sıfırlanmaz)
+const streakBadge = (m) => (m && m.streak >= STREAK_MIN ? [{ key: 'streak', cls: 'streak', icon: 'flame', keep: true, text: String(m.streak), title: `${m.streak} etkinliktir art arda katılıyor` }] : []);
+
+// İsimlerin yanında: açık sezonun seviye rozeti ve etkinlik serisi
 export function nameBadges(board, uid) {
-  const list = board ? tierBadge(board.current?.byId.get(uid)) : [];
+  const list = board ? [...tierBadge(board.current?.byId.get(uid)), ...streakBadge(board.members.get(uid))] : [];
   return list.length ? h('span', { class: 'bdgs' }, list.map((b) => chip(b, true))) : null;
 }
-
-const streakText = (m) => [
-  m.streak >= STREAK_MIN ? `${m.streak} etkinlik art arda` : null,
-  m.wed_streak >= STREAK_MIN ? `${m.wed_streak} Çarşamba art arda` : null,
-].filter(Boolean).join(' · ');
 
 // Sezon özeti kartı için veriler
 export function seasonSummary(board, season, uid) {
@@ -216,10 +214,10 @@ export function ranking(board) {
         rows.map((r) => h('div', { class: 'rank' + (r.id === me() ? ' me' : '') },
           h('span', { class: 'n' + (r.rank && r.rank <= 3 ? ` top p${r.rank}` : '') }, r.rank ?? '–'),
           h('span', { class: 'who2' }, h('span', { style: { fontWeight: '600' } }, r.full_name),
-            h('span', { class: 'bdgs' }, tierBadge(r).map((b) => chip(b)))),
+            h('span', { class: 'bdgs' }, [...tierBadge(r), ...(season.open ? streakBadge(r) : [])].map((b) => chip(b)))),
           h('span', { class: 'v' }, r.points, h('small', null, ' puan')),
           h('div', { class: 'track' }, h('i', { style: { width: `${(r.points / max) * 100}%` } })),
-          h('div', { class: 'sub' }, `${r.attended} etkinlik · ${r.wed} Çarşamba`, season.open && streakText(r) ? ` · ${streakText(r)}` : '')))) : null,
+          h('div', { class: 'sub' }, `${r.attended} etkinlik · ${r.wed} Çarşamba`, season.open && r.wed_streak >= STREAK_MIN ? ` · ${r.wed_streak} Çarşamba art arda` : '')))) : null,
     ].filter(Boolean);
     el.replaceChildren(...kids);
   }
@@ -256,10 +254,10 @@ export function myBadges(board) {
   }
   if (m) {
     out.push(h('div', { class: 'card' },
-      h('b', null, 'Katılım serisi'),
+      h('div', { class: 'row' }, h('b', { class: 'grow' }, 'Katılım serisi'), streakBadge(m).map((b) => chip(b))),
       h('div', { class: 'muted' }, `Etkinlik: art arda ${m.streak} · En uzun: ${m.best_streak} · Toplam ${m.total}`),
       h('div', { class: 'muted' }, `Çarşamba: art arda ${m.wed_streak ?? 0} · En uzun: ${m.wed_best_streak ?? 0} · Toplam ${m.wed_total ?? 0}`),
-      h('div', { class: 'muted small' }, 'Kaçırılan her etkinlik kendi serisini sıfırlar. Seri sezonla sıfırlanmaz.')));
+      h('div', { class: 'muted small' }, `Art arda ${STREAK_MIN} etkinlikten itibaren adının yanında alev ve sayı görünür. Kaçırılan her etkinlik kendi serisini sıfırlar; seri sezonla sıfırlanmaz.`)));
   }
   const past = board.seasons.filter((s) => !s.open).map((s) => ({ s, r: s.byId.get(uid) })).filter(({ r }) => r && (r.points > 0 || r.idea));
   if (past.length) {
