@@ -376,11 +376,18 @@ export async function eventDetail(id) {
             h('div', { class: 'who2' }, h('span', { style: { fontWeight: '600' } }, a.profiles?.full_name ?? '?'), nameBadges(board, a.user_id)),
             a.profiles?.bike ? h('div', { class: 'muted small' }, a.profiles.bike) : null,
             a.reason ? h('div', { class: 'muted small', style: { fontStyle: 'italic' } }, `“${a.reason}”`) : null),
-          !rollcall ? null : isAdmin()
+          isAdmin()
             ? h('div', { class: 'row', style: { gap: '6px' } },
-                h('button', { class: 'chk ok' + (a.present === true ? ' on' : ''), 'aria-label': 'Geldi', 'aria-pressed': String(a.present === true), onclick: mark(a, true) }, '✓'),
-                h('button', { class: 'chk bad' + (a.present === false ? ' on' : ''), 'aria-label': 'Gelmedi', 'aria-pressed': String(a.present === false), onclick: mark(a, false) }, '✕'))
-            : a.present === true ? badge('Geldi', 'ok') : a.present === false ? badge('Gelmedi', 'bad') : null)))),
+                rollcall ? h('button', { class: 'chk ok' + (a.present === true ? ' on' : ''), 'aria-label': 'Geldi', 'aria-pressed': String(a.present === true), onclick: mark(a, true) }, '✓') : null,
+                rollcall ? h('button', { class: 'chk bad' + (a.present === false ? ' on' : ''), 'aria-label': 'Gelmedi', 'aria-pressed': String(a.present === false), onclick: mark(a, false) }, '✕') : null,
+                h('button', { class: 'iconbtn bad', 'aria-label': `${a.profiles?.full_name ?? 'Üyeyi'} listeden çıkar`, onclick: busy(async () => {
+                  const who = a.profiles?.full_name ?? 'Bu üye';
+                  if (!(await confirmBox('Listeden çıkar', `${who} katılım listesinden çıkarılsın mı? Yanıtı ve yoklama işareti silinir; üye isterse yeniden yanıt verebilir.`, { yes: 'Çıkar', danger: true }))) return;
+                  check(await sb.from('attendances').delete().eq('event_id', ev.id).eq('user_id', a.user_id));
+                  toast(`${who} listeden çıkarıldı.`);
+                  router.refresh();
+                }) }, icon('trash')))
+            : !rollcall ? null : a.present === true ? badge('Geldi', 'ok') : a.present === false ? badge('Gelmedi', 'bad') : null)))),
 
       h('div', { class: 'card' },
         h('b', { style: { color: 'var(--bad)' } }, `Katılamayanlar (${notGoing.length})`),
