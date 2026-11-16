@@ -66,6 +66,7 @@ const ICONS = {
   like: '<path d="M7 11v9H4v-9zM7 11l4-8c1.5 0 2.5 1 2.5 2.500V9h5a2 2 0 0 1 2 2.300l-1.2 7A2 2 0 0 1 17.3 20H7"/>',
   dislike: '<path d="M7 13V4H4v9zM7 13l4 8c1.5 0 2.5-1 2.5-2.500V15h5a2 2 0 0 0 2-2.300l-1.2-7A2 2 0 0 0 17.3 4H7"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M9 20h6"/>',
 };
 export function icon(name) {
   const s = h('span', { class: 'ico', 'aria-hidden': 'true', style: { display: 'inline-flex' } });

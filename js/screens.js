@@ -4,6 +4,8 @@ import {
   btn, field, input, textarea, badge, section, logo, isStandalone, router,
 } from './core.js';
 import { routeMap, mapsUrl } from './map.js';
+import { loadBoard, loadBoardSafe, nameBadges, announceNew, ranking as rankingView, myBadges } from './badges.js';
+import { pushSupported, pushStatus, enablePush, disablePush } from './push.js';
 
 const APP_NAME = 'WARDERS OF BİLGİ';
 const check = ({ data, error }) => {
@@ -220,12 +222,22 @@ export async function events() {
   }
   draw();
 
+  // Rozet duyurusu ve yöneticiye sezon hatırlatması (sayfayı bekletmeden)
+  const seasonHint = h('a', { class: 'hint', href: isAdmin() ? '#/dashboard' : '#/ranking', hidden: true, style: { textDecoration: 'none' } },
+    h('b', null, 'Açık sezon yok'), h('div', { class: 'muted' }, 'Sıralama ve rozetler için Dashboard › Sıralama bölümünden sezon başlat.'));
+  loadBoardSafe().then((board) => {
+    if (!board) return;
+    announceNew(board);
+    if (isAdmin() && !board.current) seasonHint.hidden = false;
+  });
+
   return {
     title: 'WOB',
     tab: 'events',
     node: [
       h('div', { class: 'brand' }, logo(110), h('div', { class: 'name' }, APP_NAME),
         state.profile?.full_name ? h('div', { class: 'muted' }, `Hoş geldin, ${state.profile.full_name.split(' ')[0]}`) : null),
+      seasonHint,
       body,
     ],
   };
@@ -233,11 +245,12 @@ export async function events() {
 
 // ---------- Etkinlik detayı ----------
 export async function eventDetail(id) {
-  const [ev, stops, atts, reacts] = await Promise.all([
+  const [ev, stops, atts, reacts, board] = await Promise.all([
     sb.from('events').select('*').eq('id', id).maybeSingle().then(check),
     sb.from('event_stops').select('*').eq('event_id', id).order('position').then(check),
     sb.from('attendances').select('event_id, user_id, going, reason, present, updated_at, profiles!attendances_user_id_fkey(full_name, bike)').eq('event_id', id).then(check),
     sb.from('reactions').select('*').eq('event_id', id).then(check),
+    loadBoardSafe(),
   ]);
   if (!ev) return { title: 'Etkinlik', back: '#/', node: h('div', { class: 'empty' }, 'Etkinlik bulunamadı.') };
 
@@ -341,7 +354,7 @@ export async function eventDetail(id) {
         h('div', { class: 'plist' }, going.map((a, i) => h('div', { class: 'prow' },
           h('span', { class: 'pn' }, i + 1),
           h('div', { class: 'grow' },
-            h('div', { style: { fontWeight: '600' } }, a.profiles?.full_name ?? '?'),
+            h('div', { class: 'who2' }, h('span', { style: { fontWeight: '600' } }, a.profiles?.full_name ?? '?'), nameBadges(board, a.user_id)),
             a.profiles?.bike ? h('div', { class: 'muted small' }, a.profiles.bike) : null,
             a.reason ? h('div', { class: 'muted small', style: { fontStyle: 'italic' } }, `“${a.reason}”`) : null),
           isAdmin()
@@ -363,7 +376,9 @@ export async function eventDetail(id) {
         done
           ? btn('Tamamlandı işaretini kaldır', patch({ completed_at: null }), 'ghost block')
           : btn('Etkinliği tamamla', busy(async () => {
-              if (!(await confirmBox('Etkinlik tamamlansın mı?', 'Etkinlik “Geçmiş” sekmesine taşınır ve üyeler artık yanıt veremez. Yoklamayı sonra da düzenleyebilirsin.', { yes: 'Tamamla' }))) return;
+              const unmarked = going.filter((a) => a.present == null).length;
+              const warn = unmarked ? `Dikkat: ${unmarked} kişinin yoklaması alınmadı. Yoklaması alınmayan katılım rozetlere ve seriye sayılmaz. ` : '';
+              if (!(await confirmBox('Etkinlik tamamlansın mı?', `${warn}Etkinlik “Geçmiş” sekmesine taşınır ve üyeler artık yanıt veremez. Yoklamayı sonra da düzenleyebilirsin.`, { yes: 'Tamamla', danger: unmarked > 0 }))) return;
               check(await sb.from('events').update({ completed_at: new Date().toISOString() }).eq('id', ev.id));
               router.refresh();
             }), 'ok block'),
@@ -646,7 +661,8 @@ let dashTab = 'members';
 let dashQuery = '';
 export async function dashboard() {
   if (!isAdmin()) return adminOnly('Dashboard', 'dashboard');
-  const d = await sb.rpc('admin_dashboard').then(check);
+  const [d, board] = await Promise.all([sb.rpc('admin_dashboard').then(check), loadBoardSafe()]);
+  const rank = board ? rankingView(board) : null;
   const max = Math.max(1, ...d.members.map((m) => m.attended));
   const tile = (value, label, cls = '') => h('div', { class: 'tile ' + cls }, h('b', null, value), h('span', null, label));
   const dot = (v) => h('i', { class: 'dot', style: { background: `var(${v})` } });
@@ -655,7 +671,8 @@ export async function dashboard() {
   const search = searchBox(dashQuery, '', (v) => { dashQuery = v; draw(); });
   function draw() {
     const seg = (key, label) => h('button', { class: dashTab === key ? 'on' : '', onclick: () => { if (dashTab !== key) { dashTab = key; draw(); } } }, label);
-    const label = dashTab === 'members' ? 'Üye ara' : 'Etkinlik ara';
+    const label = dashTab === 'events' ? 'Etkinlik ara' : 'Üye ara';
+    rank?.search(dashTab === 'ranking' ? dashQuery : '');
     search.placeholder = label;
     search.setAttribute('aria-label', label);
     const mem = d.members.map((m, i) => ({ m, i })).filter(({ m }) => matches(dashQuery, m.full_name, EDU[m.edu_status]));
@@ -663,13 +680,13 @@ export async function dashboard() {
     const none = h('div', { class: 'empty' }, 'Aramayla eşleşen kayıt yok.');
     const flat = (arr) => arr.flat(Infinity).filter((x) => x != null && x !== false);
     body.replaceChildren(...flat([
-      h('div', { class: 'seg' }, seg('members', 'Üye katılımları'), seg('events', `Etkinlikler (${d.events.length})`)),
-      dashTab === 'members' ? [
-      h('div', { class: 'muted' }, 'Sıralama yoklamaya göredir: sayı, yoklamada “geldi” işaretlendiği etkinlik sayısıdır.'),
+      h('div', { class: 'seg' }, seg('members', 'Katılım'), seg('events', `Etkinlikler (${d.events.length})`), seg('ranking', 'Sıralama')),
+      dashTab === 'ranking' ? [rank ? rank.el : h('div', { class: 'empty' }, 'Sıralama yüklenemedi.')] : dashTab === 'members' ? [
+      h('div', { class: 'muted' }, 'Tüm zamanlar: sayı, yoklamada “geldi” işaretlendiği etkinlik sayısıdır. Sezon sıralaması “Sıralama” sekmesinde.'),
       h('div', { class: 'card' },
         d.members.length ? (mem.length ? null : none) : h('div', { class: 'muted' }, 'Veri yok.'),
         mem.map(({ m, i }) => h('div', { class: 'rank' },
-          h('span', { class: 'n' }, i + 1), h('span', { style: { fontWeight: '600' } }, m.full_name, EDU[m.edu_status] ? h('span', { class: 'muted small' }, `  ${EDU[m.edu_status]}`) : null), h('span', { class: 'v' }, m.attended),
+          h('span', { class: 'n' }, i + 1), h('span', { class: 'who2' }, h('span', { style: { fontWeight: '600' } }, m.full_name), EDU[m.edu_status] ? h('span', { class: 'muted small' }, EDU[m.edu_status]) : null, nameBadges(board, m.id)), h('span', { class: 'v' }, m.attended),
           h('div', { class: 'track' }, h('i', { style: { width: `${(m.attended / max) * 100}%` } })),
           h('div', { class: 'sub' }, dot('--ok'), `${m.yes_count} katılıyorum  `, dot('--bad'), `${m.no_count} katılamıyorum  `, dot('--muted'), `${Math.max(0, d.total_events - m.yes_count - m.no_count)} yanıtsız`)))),
       ] : [
@@ -701,13 +718,13 @@ export async function dashboard() {
 let memQuery = '';
 export async function members() {
   if (!isAdmin()) return adminOnly('Üyeler', 'members');
-  const all = await sb.from('profiles').select('*').order('full_name').then(check);
+  const [all, board] = await Promise.all([sb.from('profiles').select('*').order('full_name').then(check), loadBoardSafe()]);
   const patch = (id, values) => busy(async () => {
     check(await sb.from('profiles').update(values).eq('id', id));
     router.refresh();
   });
   const info = (m) => [
-    h('div', { class: 'row wrap' }, h('b', { style: { fontSize: '16px' } }, m.full_name || '(isimsiz)'),
+    h('div', { class: 'row wrap' }, h('b', { style: { fontSize: '16px' } }, m.full_name || '(isimsiz)'), nameBadges(board, m.id),
       EDU[m.edu_status] ? badge(EDU[m.edu_status], m.edu_status === 'student' ? 'gold' : 'ok') : badge('Okuyor/mezun: belirtilmemiş')),
     h('div', { class: 'muted' }, [m.bike, m.phone].filter(Boolean).join(' · ') || 'Bilgi yok'),
     h('div', { class: 'muted small' }, `Kayıt: ${fmtDate(m.created_at)}`),
@@ -761,8 +778,40 @@ export async function members() {
 // =====================================================================
 // Profil
 // =====================================================================
-export function profile() {
+export async function rankingPage() {
+  const board = await loadBoard();
+  const view = rankingView(board);
+  const search = searchBox('', 'Üye ara', (v) => view.search(v));
+  return { title: 'Sıralama', tab: 'ranking', node: [search, view.el] };
+}
+
+// Profildeki bildirim bölümü
+function pushSection() {
+  const box = h('div', { class: 'card' });
+  async function draw() {
+    const st = await pushStatus().catch(() => 'unsupported');
+    const text = {
+      on: 'Bu telefonda bildirimler açık. Yeni etkinlik yayınlandığında ve rozet kazandığında haber alırsın.',
+      off: 'Yeni etkinlik yayınlandığında ve rozet kazandığında telefonuna bildirim gelsin.',
+      denied: 'Bildirim izni kapalı. Telefonun ayarlarından WOB için bildirimlere izin verdikten sonra buradan açabilirsin.',
+      unsupported: isStandalone()
+        ? 'Bu cihaz ya da tarayıcı bildirimleri desteklemiyor.'
+        : 'Bildirim almak için uygulamayı ana ekrana ekleyip oradan aç (iPhone’da şart).',
+    }[st];
+    box.replaceChildren(...[
+      h('div', { class: 'row' }, h('b', { class: 'grow' }, 'Bildirimler'), st === 'on' ? badge('Açık', 'ok') : badge('Kapalı')),
+      h('div', { class: 'muted' }, text),
+      st === 'off' ? btn('Bildirimleri aç', busy(async () => { await enablePush(); toast('Bildirimler açıldı.'); await draw(); }), 'block') : null,
+      st === 'on' ? btn('Bildirimleri kapat', busy(async () => { await disablePush(); await draw(); }), 'ghost block') : null,
+    ].filter(Boolean));
+  }
+  draw();
+  return box;
+}
+
+export async function profile() {
   const p = state.profile;
+  const board = await loadBoardSafe();
   const name = input({ value: p?.full_name ?? '', autocomplete: 'name' });
   const phone = input({ value: p?.phone ?? '', type: 'tel', autocomplete: 'tel' });
   const bike = input({ value: p?.bike ?? '' });
@@ -773,6 +822,11 @@ export function profile() {
     node: [
       h('div', null, badge(isAdmin() ? 'Yönetici' : 'Üye', isAdmin() ? 'gold' : '')),
       h('div', { class: 'muted' }, state.session?.user?.email ?? ''),
+      section('Rozetlerim'),
+      board ? myBadges(board) : h('div', { class: 'muted' }, 'Rozetler yüklenemedi.'),
+      isAdmin() ? null : h('a', { href: '#/ranking', class: 'btn sec block' }, 'Sıralamayı gör'),
+      section('Bildirimler'),
+      pushSection(),
       section('Bilgilerim'),
       field('Ad soyad', name), edu.el, field('Telefon', phone), field('Motosiklet', bike),
       btn('Kaydet', busy(async () => {

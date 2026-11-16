@@ -1,7 +1,7 @@
 // WOB service worker: uygulama dosyalarını önbelleğe alır.
 // Çevrimiçiyken her zaman en yeni sürüm gelir; bağlantı yoksa önbellekteki açılır.
-const CACHE = 'wob-v6';
-const SHELL = ['./', 'index.html', 'css/app.css', 'js/supabase.js', 'js/app.js', 'js/core.js', 'js/screens.js', 'js/map.js',
+const CACHE = 'wob-v7';
+const SHELL = ['./', 'index.html', 'css/app.css', 'js/supabase.js', 'js/app.js', 'js/core.js', 'js/screens.js', 'js/map.js', 'js/badges.js', 'js/push.js',
   'manifest.json', 'icons/logo.png', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
@@ -43,4 +43,29 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(req).then((hit) => hit || caches.match('index.html'))),
   );
+});
+
+// ---------- Bildirimler ----------
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data.json(); } catch { /* boş bildirim */ }
+  e.waitUntil(self.registration.showNotification(d.title || 'WOB', {
+    body: d.body || '',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    data: { url: typeof d.url === 'string' && d.url.startsWith('#/') ? d.url : '#/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const hash = e.notification.data?.url || '#/';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const open = list.find((c) => c.url.startsWith(self.registration.scope));
+    if (open) {
+      open.postMessage({ type: 'open', url: hash });
+      return open.focus();
+    }
+    return self.clients.openWindow(self.registration.scope + hash);
+  }));
 });

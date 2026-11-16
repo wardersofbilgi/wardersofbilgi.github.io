@@ -1,12 +1,14 @@
 // WOB: açılış, oturum ve sayfa yönlendirme.
 import { sb, state, isAdmin, loadProfile, h, icon, fail, toast, closeLayers, router } from './core.js';
 import * as S from './screens.js';
+import { syncPush } from './push.js';
 
 const app = document.getElementById('app');
 
 const TABS = [
   ['events', '#/', 'Etkinlikler', 'calendar', false],
   ['suggestions', '#/suggestions', 'Öneriler', 'bulb', false],
+  ['ranking', '#/ranking', 'Sıralama', 'trophy', 'member'],
   ['dashboard', '#/dashboard', 'Dashboard', 'chart', true],
   ['members', '#/members', 'Üyeler', 'people', true],
   ['profile', '#/profile', 'Profil', 'person', false],
@@ -29,6 +31,7 @@ function route() {
   if (a === 'formation' && b) return () => S.formation(b);
   if (a === 'suggestions') return S.suggestions;
   if (a === 'dashboard') return S.dashboard;
+  if (a === 'ranking') return S.rankingPage;
   if (a === 'members') return S.members;
   if (a === 'profile') return S.profile;
   return S.events;
@@ -39,7 +42,7 @@ function shell(view) {
     view.back ? h('a', { class: 'back', href: view.back }, icon('back'), 'Geri') : h('span'),
     h('h1', null, view.title ?? 'WOB'), h('span'));
   const tabs = view.tab ? h('nav', { class: 'tabs', 'aria-label': 'Ana menü' },
-    TABS.filter((t) => !t[4] || isAdmin()).map(([key, href, label, ic]) =>
+    TABS.filter((t) => (t[4] === 'member' ? !isAdmin() : !t[4] || isAdmin())).map(([key, href, label, ic]) =>
       h('a', { href, class: key === view.tab ? 'on' : '', 'aria-current': key === view.tab ? 'page' : null }, icon(ic), label))) : null;
   app.className = (view.tab ? 'has-tabs ' : '') + (bar ? '' : 'no-bar');
   app.replaceChildren(...[bar, h('main', { class: 'page' }, view.node), tabs].filter(Boolean));
@@ -91,6 +94,7 @@ async function boot() {
   await loadProfile();
   if (state.linkError) history.replaceState(null, '', '#/login');
   await render();
+  if (state.profile?.status === 'approved') syncPush();
   if (state.linkError) toast('Bağlantı geçersiz ya da süresi dolmuş. Yeniden iste.', true);
 
   sb.auth.onAuthStateChange((event, session) => {
