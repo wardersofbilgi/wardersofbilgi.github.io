@@ -38,21 +38,27 @@ export async function addAttendeeSheet(ev, atts) {
   });
 }
 
-// ---------- Takvime ekle (.ics) ----------
-const icsEsc = (t) => String(t ?? '').replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/([,;])/g, '\\$1');
-const icsDate = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+// ---------- Takvime ekle ----------
+// iPhone'da ana ekrandan açılan uygulama sayfa içinden dosya indiremez. Bu yüzden takvim dosyası
+// küçük bir sunucu fonksiyonundan (Supabase "ics") gerçek bir adresle açılır; Google Takvim ayrıca sunulur.
+const ICS_URL = 'https://hgpncthohgxvazoizvho.supabase.co/functions/v1/ics';
+const calDate = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 export function calendarLink(ev, stops) {
   const start = new Date(ev.starts_at);
   const end = new Date(start.getTime() + 3 * 3600 * 1000); // bitiş saati tutulmuyor: 3 saat varsayılır
-  const desc = [ev.meeting_note, ev.description, `${location.origin}${location.pathname}#/event/${ev.id}`].filter(Boolean).join('\n\n');
-  const lines = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//WOB//Warders of Bilgi//TR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
-    'BEGIN:VEVENT', `UID:${ev.id}@wardersofbilgi`, `DTSTAMP:${icsDate(new Date())}`, `DTSTART:${icsDate(start)}`, `DTEND:${icsDate(end)}`,
-    `SUMMARY:${icsEsc(ev.title)}`, `DESCRIPTION:${icsEsc(desc)}`,
-    stops?.[0]?.name ? `LOCATION:${icsEsc(stops[0].name)}` : null,
-    'END:VEVENT', 'END:VCALENDAR',
-  ].filter(Boolean).join('\r\n');
-  return h('a', { class: 'btn sec block', href: `data:text/calendar;charset=utf-8,${encodeURIComponent(lines)}`, download: 'wob-etkinlik.ics' }, 'Takvime ekle');
+  const link = `${location.origin}${location.pathname}#/event/${ev.id}`;
+  const desc = [ev.meeting_note, ev.description].filter(Boolean).join('\n\n').slice(0, 900);
+  const place = stops?.[0] ? (stops[0].name || `${stops[0].lat},${stops[0].lng}`) : '';
+  const apple = `${ICS_URL}?${new URLSearchParams({ id: ev.id, s: calDate(start), e: calDate(end), t: ev.title, d: [desc, link].filter(Boolean).join('\n\n'), l: place, u: link })}`;
+  const google = `https://calendar.google.com/calendar/render?${new URLSearchParams({ action: 'TEMPLATE', text: ev.title, dates: `${calDate(start)}/${calDate(end)}`, details: [desc, link].filter(Boolean).join('\n\n'), location: place })}`;
+  return btn('Takvime ekle', () => sheet((close) => [
+    h('h2', null, 'Takvime ekle'),
+    h('div', { class: 'muted' }, 'Kullandığın takvimi seç. Etkinlik 3 saat olarak eklenir; iPhone takviminde 2 saat önce hatırlatma kurulur.'),
+    h('a', { class: 'btn block', href: apple, target: '_blank', rel: 'noopener', onclick: () => setTimeout(close, 300) }, 'iPhone / Apple Takvim'),
+    h('a', { class: 'btn sec block', href: google, target: '_blank', rel: 'noopener', onclick: () => setTimeout(close, 300) }, 'Google Takvim'),
+    h('div', { class: 'muted small' }, 'iPhone’da Safari açılır ve “Takvime ekle” sorulur. Android’de Google Takvim’i seç.'),
+    btn('Vazgeç', close, 'ghost block'),
+  ]), 'sec block');
 }
 
 // ---------- Duyurular ----------
