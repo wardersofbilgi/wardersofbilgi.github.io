@@ -778,12 +778,24 @@ export async function members() {
     const waiting = shown.filter((m) => m.status === 'pending');
     const approved = shown.filter((m) => m.status === 'approved');
     const rejected = shown.filter((m) => m.status === 'rejected');
+    // Kaydı tamamen sil: hesap ve bütün geçmiş silinir, geri alınamaz
+    const purge = (m) => btn('Kaydı tamamen sil', busy(async () => {
+      const name = m.full_name || 'Bu kişi';
+      const ok = await confirmBox('Kaydı tamamen sil',
+        `${name} kaydı tamamen silinsin mi? Hesabı, katılım ve yoklama geçmişi, önerileri, beğenileri, sürüş düzenindeki yeri ve rozetleri silinir. Bu işlem geri alınamaz. Kişi isterse aynı e-postayla yeniden kayıt olabilir.`,
+        { yes: 'Tamamen sil', danger: true });
+      if (!ok) return;
+      check(await sb.rpc('admin_delete_member', { p_id: m.id }));
+      toast(`${name} kaydı silindi.`);
+      router.refresh();
+    }), 'ghost sm bad-text');
     body.replaceChildren(...flat([
       memQuery.trim() && !shown.length ? h('div', { class: 'empty' }, 'Aramayla eşleşen üye yok.') : null,
       section(`Onay bekleyenler (${waiting.length})`),
       waiting.length ? null : h('div', { class: 'muted' }, 'Bekleyen başvuru yok.'),
       waiting.map((m) => h('div', { class: 'card' }, info(m),
-        h('div', { class: 'row' }, btn('Onayla', patch(m.id, { status: 'approved' }), 'ok sm grow'), btn('Reddet', patch(m.id, { status: 'rejected' }), 'bad sm grow')))),
+        h('div', { class: 'row' }, btn('Onayla', patch(m.id, { status: 'approved' }), 'ok sm grow'), btn('Reddet', patch(m.id, { status: 'rejected' }), 'bad sm grow')),
+        purge(m))),
       section(`Üyeler (${approved.length})`),
       h('div', { class: 'muted' }, `Yöneticiler: ${all.filter((m) => m.status === 'approved' && m.role === 'admin').length}. Kendi yetkini buradan değiştiremezsin.`),
       approved.map((m) => {
@@ -805,11 +817,12 @@ export async function members() {
               if (!(await confirmBox('Üyelikten çıkar', `${m.full_name} uygulamaya erişemeyecek.`, { yes: 'Çıkar', danger: true }))) return;
               check(await sb.from('profiles').update({ status: 'rejected', role: 'member' }).eq('id', m.id));
               router.refresh();
-            }), 'ghost sm grow')));
+            }), 'ghost sm grow')),
+          m.id === me() ? null : purge(m));
       }),
       rejected.length ? [
         section(`Reddedilenler (${rejected.length})`),
-        rejected.map((m) => h('div', { class: 'card' }, info(m), btn('Yeniden onayla', patch(m.id, { status: 'approved' }), 'sec sm'))),
+        rejected.map((m) => h('div', { class: 'card' }, info(m), h('div', { class: 'row' }, btn('Yeniden onayla', patch(m.id, { status: 'approved' }), 'sec sm grow'), purge(m)))),
       ] : null,
     ]));
   }

@@ -213,3 +213,4 @@ a.hint { color: inherit; }
 .rank .n.top.p2 { background: #C8CDD6; } .rank .n.top.p3 { background: #C47C48; }
 .rank .v small, .pts small { font-size: 12px; font-weight: 600; color: var(--muted); }
 .pts { font-size: 28px; font-weight: 800; color: var(--gold); flex: 1; }
+.btn.bad-text { color: var(--bad, #E0705F); }
