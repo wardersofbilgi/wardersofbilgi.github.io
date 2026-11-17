@@ -167,7 +167,7 @@ export function awardSheet(member, board) {
         }), 'ghost sm')))) : h('div', { class: 'muted' }, 'Bu üyenin henüz özel rozeti yok.'),
       field('Rozet adı', title),
       picker,
-      h('div', { class: 'muted small' }, 'Özel rozet kalıcıdır; sezonla sıfırlanmaz. Üyenin profilinde ve adının yanında görünür.'),
+      h('div', { class: 'muted small' }, 'Özel rozet kalıcıdır; sezonla sıfırlanmaz. Üyenin profilinde görünür ve üyeye bildirim gider.'),
       btn('Rozeti ver', busy(async () => {
         if (title.value.trim().length < 2) return toast('Rozete bir ad yaz.', true);
         check(await sb.from('awards').insert({ user_id: member.id, title: title.value.trim(), icon }));
