@@ -1,5 +1,5 @@
 // Sezonlar, sıralama ve rozetler. Rozetler saklanmaz; yoklama ve öneri verisinden hesaplanır.
-import { sb, me, isAdmin, h, toast, confirmBox, sheet, busy, btn, field, input, pad, router } from './core.js';
+import { sb, me, isAdmin, h, toast, fail, confirmBox, sheet, busy, btn, field, input, pad, router } from './core.js';
 
 // Tek rozet, puanla: etkinlik 2 puan, Çarşamba Buluşması 1 puan (sezonluk)
 export const POINTS = { normal: 2, wednesday: 1 };
@@ -133,7 +133,7 @@ function startSeasonSheet(board) {
       // Önceki sezonun bittiği günü seçtiyse, bittiği andan başlat
       if (last?.ends_at && start < new Date(last.ends_at) && start >= new Date(new Date(last.ends_at).toDateString())) start = new Date(last.ends_at);
       const { error } = await sb.from('seasons').insert({ name: name.value.trim(), starts_at: start.toISOString() });
-      if (error) return toast(error.message, true);
+      if (error) return fail(error);
       close();
       toast('Sezon başladı.');
       router.refresh();
@@ -159,7 +159,7 @@ function seasonAdmin(board) {
         : '';
       if (!(await confirmBox(`${cur.name} bitsin mi?`, `${warn}Sezon kapanır ve sonuçları üyelerin profilinde kalır. Yeni sezonu sonra başlatırsın.`, { yes: 'Sezonu bitir', danger: cur.open_events > 0 }))) return;
       const { error } = await sb.from('seasons').update({ ends_at: new Date().toISOString() }).eq('id', cur.id);
-      if (error) return toast(error.message, true);
+      if (error) return fail(error);
       toast('Sezon bitti.');
       router.refresh();
     }), 'ghost block'));
@@ -179,7 +179,7 @@ function tierSheet() {
       if (![b, s, g].every((n) => Number.isInteger(n) && n >= 1 && n <= 1000)) return toast('Puanlar 1 ile 1000 arasında tam sayı olmalı.', true);
       if (!(b < s && s < g)) return toast('Puanlar sırayla artmalı: Bronz < Gümüş < Altın.', true);
       const { error } = await sb.from('app_settings').upsert({ key: 'badge_tiers', value: { bronze: b, silver: s, gold: g } });
-      if (error) return toast(error.message, true);
+      if (error) return fail(error);
       close();
       toast('Rozet puanları güncellendi.');
       router.refresh();

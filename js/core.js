@@ -95,7 +95,19 @@ export function toast(msg, bad = false) {
   layer().append(t);
   toastTimer = setTimeout(() => t.remove(), bad ? 5000 : 2600);
 }
-export const fail = (error) => toast(typeof error === 'string' ? error : error?.message || 'Bir hata oluştu.', true);
+// Sık görülen sunucu hatalarını Türkçeye çevir
+const ERRORS = [
+  [/rate limit|too many requests/i, 'Çok fazla deneme yapıldı. Biraz bekleyip tekrar dene; sürerse bir yöneticiye haber ver.'],
+  [/invalid login credentials/i, 'E-posta ya da şifre hatalı.'],
+  [/already registered|already been registered|user already exists/i, 'Bu e-postayla zaten bir hesap var. Giriş yap ya da “Şifremi unuttum”u kullan.'],
+  [/email not confirmed/i, 'E-posta adresin henüz doğrulanmadı. Gelen kutundaki bağlantıya tıkla.'],
+  [/password should be at least|weak password/i, 'Şifre çok kısa ya da zayıf. En az 6 karakter kullan.'],
+  [/unable to validate email|invalid email|email address .* is invalid/i, 'E-posta adresi geçersiz görünüyor.'],
+  [/failed to fetch|network ?error|load failed/i, 'Sunucuya ulaşılamadı. İnternet bağlantını kontrol edip tekrar dene.'],
+  [/jwt expired|invalid jwt|refresh token/i, 'Oturumun sona erdi. Lütfen yeniden giriş yap.'],
+];
+const tr = (msg) => (ERRORS.find(([re]) => re.test(msg))?.[1]) ?? msg;
+export const fail = (error) => toast(typeof error === 'string' ? tr(error) : tr(error?.message || 'Bir hata oluştu.'), true);
 
 // Onay penceresi. Evet'e basılırsa true döner.
 export function confirmBox(title, message, { yes = 'Evet', no = 'Vazgeç', danger = false } = {}) {
